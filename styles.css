@@ -99,7 +99,9 @@ kbd { background:white; border:1px solid #d4c899; border-bottom-width:2px; borde
 .form-grid label { display:grid; gap:5px; font-size:13px; font-weight:700; }
 .form-grid input, .form-grid select { width:100%; padding:9px; border:1px solid var(--line); border-radius:9px; background:white; }
 .check { display:flex; gap:8px; align-items:center; padding:5px 0; }
-.tip-box { background:var(--accent-2); color:#244d3d; padding:12px; border-radius:11px; font-size:13px; margin:12px 0; }
+.tip-box, .warning-box { padding:12px; border-radius:11px; font-size:13px; margin:12px 0; }
+.tip-box { background:var(--accent-2); color:#244d3d; }
+.warning-box { background:#fff1cb; color:#6b4b00; border:1px solid #dcc37b; }
 .button-row { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
 .small-note { color:var(--muted); font-size:12px; }
 .toast { position:fixed; left:50%; bottom:22px; transform:translate(-50%,20px); opacity:0; pointer-events:none; background:#171715; color:white; padding:10px 14px; border-radius:999px; font-size:13px; transition:.2s ease; z-index:50; }

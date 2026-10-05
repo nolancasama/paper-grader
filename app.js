@@ -6,11 +6,14 @@ const state = {
   questions: [],
   grades: {},
   names: [],
+  fingerprint: null,
   activeQuestion: 0,
   selectedStudent: 0,
   drawing: null,
   pdfjs: null,
 };
+
+const STORAGE_KEY = 'papergrader-session';
 
 const PAPER_MM = {
   A4: [210, 297],
@@ -19,6 +22,56 @@ const PAPER_MM = {
   A3: [297, 420],
   LETTER: [215.9, 279.4],
 };
+
+function currentSettings() {
+  return {
+    offsetX: $('#offsetX').value,
+    offsetY: $('#offsetY').value,
+    paperSize: $('#paperSize').value,
+    reverseOrder: $('#reverseOrder').checked,
+    rotate180: $('#rotate180').checked,
+  };
+}
+
+function applySettings(settings = {}) {
+  if (settings.offsetX !== undefined) $('#offsetX').value = settings.offsetX;
+  if (settings.offsetY !== undefined) $('#offsetY').value = settings.offsetY;
+  if (settings.paperSize && PAPER_MM[settings.paperSize]) $('#paperSize').value = settings.paperSize;
+  if (settings.reverseOrder !== undefined) $('#reverseOrder').checked = Boolean(settings.reverseOrder);
+  if (settings.rotate180 !== undefined) $('#rotate180').checked = Boolean(settings.rotate180);
+}
+
+function saveSession() {
+  if (!state.fingerprint) return;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      fingerprint: state.fingerprint,
+      questions: state.questions,
+      grades: state.grades,
+      names: state.names,
+      settings: currentSettings(),
+    }));
+  } catch (_) {}
+}
+
+function restoreSession(fingerprint) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    if (!saved || saved.fingerprint !== fingerprint) return false;
+    state.questions = Array.isArray(saved.questions) ? saved.questions : [];
+    state.grades = saved.grades && typeof saved.grades === 'object' ? saved.grades : {};
+    state.names = state.pages.map((_, i) => saved.names?.[i] || `Student ${i + 1}`);
+    applySettings(saved.settings);
+    return true;
+  } catch (_) { return false; }
+}
+
+// Printer calibration belongs to the copier, not the class: restore it on startup.
+try { applySettings(JSON.parse(localStorage.getItem(STORAGE_KEY))?.settings); } catch (_) {}
+
+function scanFingerprint(files) {
+  return JSON.stringify({ files: files.map(file => [file.name, file.size]), pages: state.pages.length });
+}
 
 function toast(msg) {
   const el = $('#toast');
@@ -31,6 +84,13 @@ function toast(msg) {
 function switchStep(id) {
   $$('.panel').forEach(p => p.classList.toggle('active', p.id === id));
   $$('.step').forEach(b => b.classList.toggle('active', b.dataset.step === id));
+  if (id === 'setup') renderSetupCanvas();
+  if (id === 'grade' && state.questions.length) {
+    state.activeQuestion = Math.min(state.activeQuestion, state.questions.length - 1);
+    state.selectedStudent = Math.min(state.selectedStudent, state.pages.length - 1);
+    initGradeData(); renderGradeView();
+  }
+  if (id === 'print') { renderScoreSummary(); updateAspectRatioWarning(); }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -65,13 +125,22 @@ async function ensurePdfJs() {
 }
 
 $('#fileInput').addEventListener('change', async (e) => {
-  const files = [...e.target.files];
+  const files = [...e.target.files].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
   if (!files.length) return;
   $('#loadStatus').textContent = 'Loading scans…';
   state.pages = [];
   state.questions = [];
   state.grades = {};
   state.names = [];
+  state.fingerprint = null;
+  state.activeQuestion = 0;
+  state.selectedStudent = 0;
+  state.drawing = null;
+  enableStep('setup', false);
+  enableStep('grade', false);
+  enableStep('print', false);
+  $('#continueToSetup').disabled = true;
+  $('#continueToGrade').disabled = true;
 
   try {
     for (const file of files) {
@@ -83,12 +152,18 @@ $('#fileInput').addEventListener('change', async (e) => {
     }
     if (!state.pages.length) throw new Error('No readable pages were found.');
     state.names = state.pages.map((_, i) => `Student ${i + 1}`);
+    state.fingerprint = scanFingerprint(files);
+    const restored = restoreSession(state.fingerprint);
     $('#loadStatus').textContent = `${state.pages.length} page${state.pages.length === 1 ? '' : 's'} ready.`;
     $('#pageCountText').textContent = `${state.pages.length} student page${state.pages.length === 1 ? '' : 's'} loaded.`;
     renderThumbs();
     $('#pagePreviewWrap').classList.remove('hidden');
     enableStep('setup', true);
     $('#continueToSetup').disabled = false;
+    renderQuestionList();
+    updateSetupReady();
+    enableStep('print', restored && state.questions.length > 0);
+    if (restored) toast('Restored previous grading session');
   } catch (err) {
     console.error(err);
     $('#loadStatus').textContent = err.message;
@@ -162,7 +237,6 @@ function renderThumbs() {
 
 $('#continueToSetup').addEventListener('click', () => {
   switchStep('setup');
-  renderSetupCanvas();
 });
 
 function renderSetupCanvas(tempRect = null) {
@@ -236,6 +310,11 @@ setupCanvas.addEventListener('pointerup', (e) => {
   renderQuestionList();
   renderSetupCanvas();
   updateSetupReady();
+  saveSession();
+});
+setupCanvas.addEventListener('pointercancel', () => {
+  state.drawing = null;
+  renderSetupCanvas();
 });
 
 function eventPoint(e, canvas) {
@@ -269,12 +348,16 @@ function renderQuestionList() {
         <input type="number" min="0.5" step="0.5" value="${q.points}" aria-label="Points">
       </div>`;
     const [labelInput, pointsInput] = el.querySelectorAll('input');
-    labelInput.addEventListener('input', () => { q.label = labelInput.value || `Q${i + 1}`; renderSetupCanvas(); });
-    pointsInput.addEventListener('input', () => { q.points = Math.max(.5, Number(pointsInput.value) || 1); });
+    labelInput.addEventListener('input', () => {
+      q.label = labelInput.value || `Q${state.questions.indexOf(q) + 1}`;
+      renderSetupCanvas(); saveSession();
+    });
+    pointsInput.addEventListener('input', () => { q.points = Math.max(.5, Number(pointsInput.value) || 1); saveSession(); });
     el.querySelector('button').addEventListener('click', () => {
       state.questions.splice(i, 1);
-      state.grades = {};
+      Object.values(state.grades).forEach(grades => delete grades[q.id]);
       renderQuestionList(); renderSetupCanvas(); updateSetupReady();
+      saveSession();
     });
     list.append(el);
   });
@@ -288,19 +371,19 @@ function updateSetupReady() {
   const ready = state.questions.length > 0;
   $('#continueToGrade').disabled = !ready;
   enableStep('grade', ready);
+  if (!ready) enableStep('print', false);
 }
 
 $('#clearQuestions').addEventListener('click', () => {
   state.questions = [];
   state.grades = {};
   renderQuestionList(); renderSetupCanvas(); updateSetupReady();
+  saveSession();
 });
 
 $('#continueToGrade').addEventListener('click', () => {
   state.activeQuestion = 0;
   state.selectedStudent = 0;
-  initGradeData();
-  renderGradeView();
   switchStep('grade');
 });
 
@@ -311,6 +394,7 @@ function initGradeData() {
       if (!state.grades[pi][q.id]) state.grades[pi][q.id] = { status: null };
     });
   });
+  saveSession();
 }
 
 function renderGradeView() {
@@ -337,7 +421,7 @@ function renderGradeView() {
     const name = document.createElement('input');
     name.className = 'student-name';
     name.value = state.names[pi] || `Student ${pi+1}`;
-    name.addEventListener('input', () => state.names[pi] = name.value);
+    name.addEventListener('input', () => { state.names[pi] = name.value; saveSession(); });
     const chip = document.createElement('span');
     chip.className = `status-chip ${grade.status || ''}`;
     chip.textContent = statusLabel(grade.status);
@@ -357,7 +441,10 @@ function renderGradeView() {
     });
 
     card.append(top, crop, buttons);
-    card.addEventListener('click', () => { state.selectedStudent = pi; renderGradeView(); });
+    card.addEventListener('click', (e) => {
+      if (e.target.matches('input')) return;
+      state.selectedStudent = pi; renderGradeView();
+    });
     grid.append(card);
   });
 }
@@ -387,6 +474,7 @@ function setGrade(studentIndex, status, advance = false) {
   const q = state.questions[state.activeQuestion];
   state.grades[studentIndex][q.id].status = status;
   state.selectedStudent = advance ? Math.min(state.pages.length - 1, studentIndex + 1) : studentIndex;
+  saveSession();
   renderGradeView();
   if (advance) requestAnimationFrame(() => {
     document.querySelector(`.student-card[data-student="${state.selectedStudent}"]`)?.scrollIntoView({block:'nearest', behavior:'smooth'});
@@ -414,6 +502,20 @@ $('#goPrint').addEventListener('click', () => {
   switchStep('print');
 });
 
+function updateAspectRatioWarning() {
+  const el = $('#aspectRatioWarning');
+  if (!state.pages.length) { el.classList.add('hidden'); return; }
+  const [paperW, paperH] = PAPER_MM[$('#paperSize').value];
+  const count = state.pages.filter(page => {
+    let pw = paperW, ph = paperH;
+    const pageLandscape = page.width > page.height;
+    if (pageLandscape !== (pw > ph)) [pw, ph] = [ph, pw];
+    return Math.abs((page.width / page.height) / (pw / ph) - 1) > .02;
+  }).length;
+  el.textContent = `${count} page${count === 1 ? '' : 's'} differ${count === 1 ? 's' : ''} from the selected paper aspect ratio by more than 2%. Correction marks may be stretched.`;
+  el.classList.toggle('hidden', count === 0);
+}
+
 function scoreForStudent(pi) {
   let score = 0, max = 0, graded = 0;
   state.questions.forEach(q => {
@@ -439,6 +541,10 @@ $('#printCalibration').addEventListener('click', () => openPrintWindow(true));
 
 function openPrintWindow(calibration = false) {
   if (!state.pages.length || !state.questions.length) return;
+  if (!calibration) {
+    const count = state.pages.filter((_, pi) => state.questions.some(q => !state.grades[pi]?.[q.id]?.status)).length;
+    if (count && !confirm(`${count} student${count === 1 ? '' : 's'} still ${count === 1 ? 'has' : 'have'} ungraded questions. Print correction marks anyway?`)) return;
+  }
   const paperKey = $('#paperSize').value;
   let [pw, ph] = PAPER_MM[paperKey];
   const landscape = state.pages[0].width > state.pages[0].height;
@@ -464,6 +570,19 @@ function openPrintWindow(calibration = false) {
   </style></head><body>${pages}<script>window.onload=()=>setTimeout(()=>window.print(),250);<\/script></body></html>`);
   w.document.close();
 }
+
+['offsetX', 'offsetY', 'paperSize', 'reverseOrder', 'rotate180'].forEach(id => {
+  $(`#${id}`).addEventListener('input', () => {
+    saveSession();
+    if (id === 'paperSize') updateAspectRatioWarning();
+  });
+});
+
+window.addEventListener('beforeunload', (e) => {
+  if (!state.questions.length) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
 
 function makeOverlayCanvas(pi, calibration = false) {
   const base = state.pages[pi];
