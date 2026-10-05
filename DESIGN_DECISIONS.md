@@ -46,3 +46,21 @@ A useful rule:
   any student has ungraded questions, and a visible warning when any page's
   aspect ratio differs from the chosen paper by more than 2% (marks would be
   stretched). Teacher can proceed either way.
+
+## 2026-10-05 — v2 redesign direction (user decisions)
+
+- **Workflow is review-first, built around an answer key** scanned as page 1.
+  Why: the teacher expected the app to grade automatically; manual judging of
+  every answer was the main cost. Full spec in `DESIGN.md`.
+- **Grading split by answer type**: circled choices graded locally by ink
+  comparison against the key (free, private); written words, numbers and
+  matching lines graded by AI with low-confidence answers flagged for review.
+  Rejected: pixel comparison for handwriting (different handwriting never
+  matches) and for matching lines (line paths vary).
+- **Auto-graders plug in via a frozen Grader interface** (`graders.js`) in
+  separate files, so the core app can ship before any grader exists.
+- **Japanese + English UI toggle**, default by browser language.
+- **Laptop-first** (mouse + keyboard); tablet must not break.
+- **Visual direction "Calm teacher's desk"**: warm paper tones, red-pen accent
+  for marks, following the Japanese ○/×-in-red convention. Rejected: clean
+  dense tool look, bold playful look.
