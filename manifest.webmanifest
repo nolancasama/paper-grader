@@ -1,0 +1,9 @@
+{
+  "name": "PaperGrader MVP",
+  "short_name": "PaperGrader",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f4f4ef",
+  "theme_color": "#f7f7f4",
+  "description": "Local-first classroom paper grading and correction-overlay printing."
+}

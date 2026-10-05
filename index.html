@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#f7f7f4" />
+  <title>PaperGrader MVP</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>PaperGrader <span>MVP</span></h1>
+      <p>Scan → grade fast → print marks back onto the originals.</p>
+    </div>
+    <div class="privacy-pill">Local processing · no student papers uploaded</div>
+  </header>
+
+  <nav class="steps" aria-label="Workflow">
+    <button class="step active" data-step="upload"><b>1</b> Upload scans</button>
+    <button class="step" data-step="setup" disabled><b>2</b> Define questions</button>
+    <button class="step" data-step="grade" disabled><b>3</b> Grade</button>
+    <button class="step" data-step="print" disabled><b>4</b> Print marks</button>
+  </nav>
+
+  <main>
+    <section id="upload" class="panel active">
+      <div class="hero-card">
+        <div>
+          <div class="eyebrow">START HERE</div>
+          <h2>Drop in the class scan</h2>
+          <p>For this MVP, use <strong>one test page per student</strong>. A multipage PDF from the copier is ideal. JPG/PNG scans also work.</p>
+          <label class="file-button">
+            <input id="fileInput" type="file" accept="application/pdf,image/png,image/jpeg,image/webp" multiple />
+            Choose PDF or images
+          </label>
+          <div id="loadStatus" class="status-line">Nothing loaded yet.</div>
+        </div>
+        <div class="workflow-mini">
+          <div><span>①</span> Scan stack</div>
+          <div><span>②</span> Define answer boxes once</div>
+          <div><span>③</span> Grade all students by question</div>
+          <div><span>④</span> Re-feed originals and print marks</div>
+        </div>
+      </div>
+
+      <div id="pagePreviewWrap" class="preview-wrap hidden">
+        <div class="section-heading">
+          <div>
+            <h3>Loaded pages</h3>
+            <p id="pageCountText"></p>
+          </div>
+          <button id="continueToSetup" class="primary">Define questions →</button>
+        </div>
+        <div id="pageThumbs" class="thumb-grid"></div>
+      </div>
+    </section>
+
+    <section id="setup" class="panel">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">TEMPLATE SETUP</div>
+          <h2>Draw a box around each answer area</h2>
+          <p>The same boxes will be used on every scanned page. Drag on Student 1's page to add a question.</p>
+        </div>
+        <button id="continueToGrade" class="primary" disabled>Start grading →</button>
+      </div>
+
+      <div class="setup-layout">
+        <div class="canvas-card">
+          <div class="canvas-toolbar">
+            <span>Drag to create a question box</span>
+            <button id="clearQuestions" class="ghost danger">Clear boxes</button>
+          </div>
+          <canvas id="setupCanvas"></canvas>
+        </div>
+        <aside class="question-sidebar">
+          <h3>Questions</h3>
+          <p class="muted">Correct = full points. Partial = half points in this MVP.</p>
+          <div id="questionList" class="question-list empty-state">No question boxes yet.</div>
+        </aside>
+      </div>
+    </section>
+
+    <section id="grade" class="panel">
+      <div class="grade-header">
+        <div>
+          <div class="eyebrow">RAPID GRADING</div>
+          <h2 id="gradeQuestionTitle">Question 1</h2>
+          <p id="gradeQuestionMeta"></p>
+        </div>
+        <div class="grade-nav">
+          <button id="prevQuestion" class="ghost">← Previous</button>
+          <select id="questionSelect" aria-label="Question"></select>
+          <button id="nextQuestion" class="ghost">Next →</button>
+        </div>
+      </div>
+
+      <div class="keyboard-help">
+        Click a student, then use <kbd>1</kbd> Correct · <kbd>2</kbd> Partial · <kbd>3</kbd> Wrong · <kbd>0</kbd> Clear · <kbd>←</kbd>/<kbd>→</kbd> move student
+      </div>
+      <div id="gradeGrid" class="grade-grid"></div>
+      <div class="bottom-actions">
+        <button id="goPrint" class="primary">Scores & print marks →</button>
+      </div>
+    </section>
+
+    <section id="print" class="panel">
+      <div class="section-heading">
+        <div>
+          <div class="eyebrow">OUTPUT</div>
+          <h2>Re-feed the original stack, then print only the marks</h2>
+          <p>Use a photocopy for the first alignment test. The scan image itself is never printed.</p>
+        </div>
+      </div>
+
+      <div class="output-layout">
+        <div class="score-card">
+          <h3>Class scores</h3>
+          <div id="scoreSummary"></div>
+        </div>
+
+        <div class="print-card">
+          <h3>Printer alignment</h3>
+          <div class="form-grid">
+            <label>Paper size
+              <select id="paperSize">
+                <option value="A4" selected>A4 (210 × 297 mm)</option>
+                <option value="B5">B5 JIS (182 × 257 mm)</option>
+                <option value="B4">B4 JIS (257 × 364 mm)</option>
+                <option value="A3">A3 (297 × 420 mm)</option>
+                <option value="LETTER">Letter (215.9 × 279.4 mm)</option>
+              </select>
+            </label>
+            <label>X offset (mm)
+              <input id="offsetX" type="number" step="0.5" value="0" />
+            </label>
+            <label>Y offset (mm)
+              <input id="offsetY" type="number" step="0.5" value="0" />
+            </label>
+          </div>
+          <label class="check"><input id="reverseOrder" type="checkbox" /> Reverse page order when printing</label>
+          <label class="check"><input id="rotate180" type="checkbox" /> Rotate correction overlay 180°</label>
+          <div class="tip-box"><strong>First real-world test:</strong> photocopy one student's blank/used test, re-feed the copy, and print an alignment test. Adjust X/Y until the marks land correctly.</div>
+          <div class="button-row">
+            <button id="printCalibration" class="ghost">Print alignment test</button>
+            <button id="printCorrections" class="primary">Print correction marks</button>
+          </div>
+        </div>
+      </div>
+      <p class="small-note">In the browser print dialog, use 100% / Actual size and disable headers, footers, and automatic scaling. Your exact copier settings may differ.</p>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
