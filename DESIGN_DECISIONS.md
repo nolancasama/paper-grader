@@ -64,3 +64,20 @@ A useful rule:
 - **Visual direction "Calm teacher's desk"**: warm paper tones, red-pen accent
   for marks, following the Japanese ○/×-in-red convention. Rejected: clean
   dense tool look, bold playful look.
+
+## 2026-10-05 — v2 build 1 implementation boundaries
+
+- **The first page is assigned the answer-key role, not treated as a special
+  student.** It is excluded consistently from student counts, results, and
+  print output. Why: a single page-role rule prevents workflow and print
+  indexing from disagreeing.
+- **v2 sessions use the new `papergrader-session-v2` namespace without v1
+  migration.** Why: the question, name-area, and grade-record shapes changed;
+  silently adapting an old session could attach grades to the wrong regions.
+- **The core app depends only on the frozen registry in `graders.js`.** No
+  answer-type grader is imported or registered in build 1, and auto-grade UI is
+  hidden when no relevant grader exists. Why: the review workflow can ship and
+  remain testable without coupling it to a particular recognition service.
+- **The existing correction-overlay and print geometry was retained while the
+  workflow and visual UI were rebuilt.** Why: offsets, rotation, reverse order,
+  and paper scaling are calibrated behavior whose semantics must not drift.
