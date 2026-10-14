@@ -1,0 +1,33 @@
+name: Package offline PaperGrader
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "offline/**"
+      - ".github/workflows/package-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check offline JavaScript
+        run: node --check offline/offline-app.js
+      - name: Package offline build
+        run: |
+          mkdir -p dist/PaperGrader-v2-Offline
+          cp offline/index.html dist/PaperGrader-v2-Offline/
+          cp offline/styles.css dist/PaperGrader-v2-Offline/
+          cp offline/offline-app.js dist/PaperGrader-v2-Offline/
+          cp offline/pdf.min.js dist/PaperGrader-v2-Offline/
+          cp offline/README.txt dist/PaperGrader-v2-Offline/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PaperGrader-v2-Offline
+          path: dist/PaperGrader-v2-Offline
+          if-no-files-found: error
