@@ -5,6 +5,16 @@ on:
     branches: [main]
     paths:
       - "offline/**"
+      - "app.js"
+      - "i18n.js"
+      - "graders.js"
+      - "graders/**"
+      - "redDetect.js"
+      - "index.html"
+      - "styles.css"
+      - "tools/**"
+      - "tests/**"
+      - "package.json"
       - ".github/workflows/package-offline.yml"
   workflow_dispatch:
 
@@ -16,6 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test source and offline build
+        run: npm test
       - name: Syntax check offline JavaScript
         run: node --check offline/offline-app.js
       - name: Package offline build

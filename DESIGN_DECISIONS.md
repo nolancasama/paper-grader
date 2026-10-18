@@ -102,3 +102,7 @@ A useful rule:
 - **Printed background is the key crop's dark non-red ink** and is subtracted from the student crop before tracing; pale anti-aliased red edges must count as red, otherwise subtraction erases student strokes lying on the key's paths. `options.templateImage` is reserved for subtracting a blank test later.
 - **AI fallback hook** (`registerFallback` in `graders.js`) receives only the small student crop plus endpoint coordinates and must return `{ connections, confidence }`, which is validated and compared locally. No fallback is registered.
 - **Tests include realistic browser-rendered PNG crops** (`tests/fixtures/matching/`) decoded by a test-only PNG reader, because purely synthetic fixtures passed while real anti-aliased crops failed.
+
+## 2026-10-18 — Offline build is generated, not hand-maintained
+
+- **`offline/` is produced by `tools/build-offline.mjs`** from the web sources: modules are concatenated in dependency order inside isolated scopes with import/export removed, PDF.js comes from the bundled UMD `pdf.min.js` with its worker embedded, and the service worker, manifest and web fonts are dropped so it runs from `file://`. Why: the first offline build was a hand-made copy of build 1 and silently missed every later feature. A test compares the committed bundle with a fresh build so a stale bundle fails `npm test`/CI. Rejected: a bundler dependency (the project stays dependency-free) and editing `offline-app.js` by hand.

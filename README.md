@@ -28,6 +28,10 @@ This is a static web app built with vanilla JavaScript ES modules. It has no bui
 
 Opening `index.html` directly with `file://` is not recommended because browser module and security rules can block some features.
 
+## Offline build
+
+The self-contained `file://` build lives in `offline/`. After changing web sources, regenerate it with `npm run build:offline`.
+
 ## PDF support
 
 The app first tries to load local files:

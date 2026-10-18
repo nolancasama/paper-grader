@@ -17,6 +17,7 @@ Five-step workflow: scan an answer key plus student pages → review proposed or
 - Matching grading runs locally through the registry, retaining details even when confidence requires review. Its review panel lets teachers correct connections and apply proportional credit.
 - Sessions persist under `papergrader-session-v2`, keyed by scan fingerprint, including question metadata, score/name areas, and matching detail/credit. Older questions without proposal fields behave as confirmed manual questions. Page images and key thumbnails are not persisted; thumbnails are cached in memory by geometry. Printer settings persist across scans.
 - Existing calibrated print geometry remains intact: paper size, X/Y offset, 180° rotation, reverse order, and alignment test. Scores use the optional score box or the existing top-right fallback. Students with any ungraded or flagged answer receive no printed score; flagged answers receive no mark. Graded, unflagged marks still print. Calibration output is unchanged.
+- A double-click offline build for locked-down PCs lives in `offline/` (classic scripts, bundled PDF.js with embedded worker, no network). It is generated from the web sources by `npm run build:offline`; `npm test` fails if the committed bundle is stale, and CI packages it as an artifact.
 - Reliability safeguards remain: network-first service worker, natural file sort, beforeunload prompt, unreviewed-print confirmation, aspect-ratio warning, and pointer-cancel handling. Detection and matching modules are included in the offline core cache.
 
 ## Known Issues
@@ -28,7 +29,6 @@ Five-step workflow: scan an answer key plus student pages → review proposed or
 - Automatic grading for other answer types is not included.
 - Saved-session identity still uses the scan fingerprint. Page-identity rekeying for changed scans is deferred.
 - Real-copier alignment has not yet been tested.
-- There is no double-click (file://) offline build: ES modules are blocked on file://, and PDF.js falls back to a CDN unless vendor/pdf.mjs is supplied. The feature code adds no new external dependency.
 - Detection ordering is row-major; column-major worksheets need Renumber/reorder.
 
 ## Next Steps

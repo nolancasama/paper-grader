@@ -18,4 +18,7 @@ Files:
 
 PDF.js is bundled locally. Its worker code is embedded inside offline-app.js.
 
+Red-key answer detection and the matching-lines grader work fully offline.
+No network connection is needed for either feature.
+
 For the first printer test, use photocopies rather than the only copy of a student's paper.

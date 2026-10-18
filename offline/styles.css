@@ -266,6 +266,7 @@ h2 {
 }
 .area-toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
@@ -328,6 +329,53 @@ h2 {
 .question-label {
   font-weight: 700;
   flex: 1;
+  min-width: 0;
+}
+input.question-label {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  background: var(--card);
+}
+.question-thumbnail {
+  display: block;
+  width: 100%;
+  height: 62px;
+  object-fit: contain;
+  margin-top: 7px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: white;
+}
+.question-status {
+  color: var(--muted);
+  font-size: 11px;
+  margin-top: 7px;
+}
+.question-item.uncertain .question-status,
+.question-status.uncertain {
+  color: var(--amber);
+}
+.question-order {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 7px;
+}
+.question-order button,
+.confirm-question {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 7px;
+  background: var(--card);
+  font-size: 11px;
+}
+.confirm-question {
+  color: var(--red);
+}
+.name-area-item {
+  margin-bottom: 8px;
 }
 .question-type-icon {
   width: 24px;
@@ -578,6 +626,71 @@ h2 {
   text-align: center;
   color: var(--muted);
   padding: 30px;
+}
+.matching-review {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 14px;
+  margin-bottom: 12px;
+}
+.matching-review h2 {
+  margin-bottom: 10px;
+}
+.matching-review-crops {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 10px;
+}
+.matching-review-crops figure {
+  min-width: 0;
+  margin: 0;
+}
+.matching-review-crops figcaption {
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.matching-review-crops canvas {
+  display: block;
+  width: 100%;
+  max-height: 270px;
+  object-fit: contain;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.matching-review-rows {
+  display: grid;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.matching-review-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+.matching-review-row.uncertain {
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-color: #e8cea0;
+}
+.matching-review-row select {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: white;
+}
+.matching-credit {
+  color: var(--red);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  margin-left: 5px;
 }
 .button-row {
   display: flex;
