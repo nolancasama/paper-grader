@@ -1,0 +1,9 @@
+{
+  "name": "paper-grader",
+  "private": true,
+  "type": "module",
+  "description": "Static browser app; package.json exists only to run the Node test suite (no dependencies, no build).",
+  "scripts": {
+    "test": "node --test \"tests/**/*.test.js\""
+  }
+}

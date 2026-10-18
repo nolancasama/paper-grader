@@ -81,3 +81,24 @@ A useful rule:
 - **The existing correction-overlay and print geometry was retained while the
   workflow and visual UI were rebuilt.** Why: offsets, rotation, reverse order,
   and paper scaling are calibrated behavior whose semantics must not drift.
+
+## 2026-10-18 — Red-key proposals, linear answer key, and matching review
+
+- **Detected areas are ordinary questions with `origin` and `confirmed` flags.** Manual and confirmed questions survive another detection run; unconfirmed proposals can be replaced. Editing or moving a proposal confirms it. Why: one question model keeps canvas, grading, deletion, and persistence consistent while preserving teacher decisions.
+- **The existing question sidebar is the linear answer key.** Labels, crop thumbnails, types, expected answers, points, confirmation, and order are edited in this single list. Why: a second answer list would create competing sources of truth.
+- **Key crops are cached in memory by question geometry, not persisted.** Why: repeated sidebar redraws should not recrop unchanged regions, while scans and derived images remain outside localStorage.
+- **A separate score box controls printed score placement.** It behaves like the name area and is saved in the session. Without it, printing retains the existing top-right placement and calibrated geometry.
+- **A student's total score is withheld when any answer is ungraded or flagged.** Graded, unflagged marks can still print; flagged answers print no mark. Why: an incomplete review must not appear to be a final total. Calibration remains unchanged.
+- **Proportional matching credit lives in `record.credit`.** Matching details and corrected connections remain on the record for review. Ordinary teacher status buttons clear automatic credit/details; the matching review panel applies a connection-based fraction. Partial grades without credit retain the existing half-points behavior.
+- **Split-box editing and page-identity rekeying are deferred.** Why: proposal review, merging, manual boxes, and the existing scan fingerprint cover this integration without expanding into new editing tools or session identity migration.
+
+## 2026-10-18 — Red-ink detection and local matching grader
+
+- **Red detection is local HSV thresholding on a ~1200 px working copy of the key only** (`redDetect.js`, DOM-free, Node-tested). Specks are dropped, strokes are joined with an anisotropic dilation (wider horizontally than vertically) so one handwritten word stays one region while answers ~2.5% of page width apart stay separate. Why: it is free, private, and fast, and only crops (never full pages) are ever handed to later graders. Rejected: OCR/AI on the full page.
+- **Proposals are ordered row-major** (top-to-bottom, then left-to-right inside a row band). Column-major worksheets need "Renumber" plus ↑/↓, which is acceptable because labels are a convenience; grading order is the list order.
+- **A region is proposed as `matching` when it is a sparse web with several line ends on both its left and right edges** (or contains ≥2 long separate strokes). Why: crossing lines form one connected component, so counting components alone missed real matching blocks, and a single-stroke rule misclassified wide red circles. Matching regions get extra padding so endpoint dots are inside the crop.
+- **Detection is conservative:** uncertain regions are still proposed (amber, "?") and every proposal needs confirmation. Relabelling or reordering is not confirmation; moving, resizing or editing a box is.
+- **Matching grading ladder:** whole-web similarity → connection-graph tracing → (future) AI fallback → teacher. Stage 2 always runs because it is free; high similarity alone can never mark a web correct if the traced graph disagrees, since one swapped pair barely changes pixel similarity. Any unresolved node, or one stroke claimed by two left nodes, sends the answer to review (status null) — never a confident wrong.
+- **Printed background is the key crop's dark non-red ink** and is subtracted from the student crop before tracing; pale anti-aliased red edges must count as red, otherwise subtraction erases student strokes lying on the key's paths. `options.templateImage` is reserved for subtracting a blank test later.
+- **AI fallback hook** (`registerFallback` in `graders.js`) receives only the small student crop plus endpoint coordinates and must return `{ connections, confidence }`, which is validated and compared locally. No fallback is registered.
+- **Tests include realistic browser-rendered PNG crops** (`tests/fixtures/matching/`) decoded by a test-only PNG reader, because purely synthetic fixtures passed while real anti-aliased crops failed.

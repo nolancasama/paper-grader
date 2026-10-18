@@ -1,17 +1,24 @@
-import { hasGrader, runGrader } from './graders.js';
+import { ANSWER_TYPES, hasGrader, runGrader } from './graders.js';
+import { detectRedRegions, sortReadingOrder, DEFAULT_RED_OPTIONS } from './redDetect.js';
 import { applyI18n, getLanguage, setLanguage, t } from './i18n.js';
+import './graders/matching.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const STORAGE_KEY = 'papergrader-session-v2';
 const PAPER_MM = { A4: [210, 297], B5: [182, 257], B4: [257, 364], A3: [297, 420], LETTER: [215.9, 279.4] };
-const TYPE_ICONS = { written: 'Aa', number: '12', circle: '○', matching: '↔' };
+const TYPE_ICONS = { written: 'Aa', number: '12', circle: '○', matching: '↔', checkbox: '☑', short: '✎' };
+const detectionCache = new WeakMap();
+const keyCropCache = new WeakMap();
+const isProposal = (question) => question.origin === 'auto' && !question.confirmed;
 
 const state = {
   allPages: [],
   files: [],
   questions: [],
   nameBox: null,
+  scoreBox: null,
+  selectedAreas: new Set(),
   grades: {},
   names: [],
   fingerprint: null,
@@ -64,6 +71,7 @@ function saveSession() {
         keyFirst: $('#keyFirst').checked,
         questions: state.questions,
         nameBox: state.nameBox,
+        scoreBox: state.scoreBox,
         grades: state.grades,
         names: state.names,
         settings: currentSettings(),
@@ -78,6 +86,11 @@ function restoreSession(fingerprint) {
   if (!saved || saved.fingerprint !== fingerprint) return false;
   state.questions = Array.isArray(saved.questions) ? saved.questions : [];
   state.nameBox = saved.nameBox || null;
+  state.scoreBox = saved.scoreBox || null;
+  state.questions.forEach((question) => {
+    if (!question.origin) question.origin = 'manual';
+    if (question.confirmed === undefined) question.confirmed = true;
+  });
   state.grades = saved.grades && typeof saved.grades === 'object' ? saved.grades : {};
   state.names = studentPages().map(
     (_, index) => saved.names?.[index] || t('studentDefault', { number: index + 1 }),
@@ -123,6 +136,7 @@ function enableStep(id, enabled = true) {
 }
 
 function switchStep(id) {
+  if (id === 'grade' && !acceptProposals()) return;
   $$('.panel').forEach((panel) => panel.classList.toggle('active', panel.id === id));
   $$('.step').forEach((button) => button.classList.toggle('active', button.dataset.step === id));
   if (id === 'areas') {
@@ -150,6 +164,8 @@ $('#languageToggle').addEventListener('click', () => {
   renderSavedBanner();
   renderThumbs();
   renderQuestionList();
+  renderSetupCanvas();
+  updateToolButtons();
   if ($('#grade').classList.contains('active')) renderGradeView();
   if ($('#results').classList.contains('active')) renderResults();
   if ($('#print').classList.contains('active')) updateAspectRatioWarning();
@@ -200,6 +216,7 @@ $('#fileInput').addEventListener('change', async (event) => {
     $('#continueToAreas').disabled = false;
     updateSetupReady();
     if (restored) toast(t('restored'));
+    if ($('#keyFirst').checked && !state.questions.length) detectAnswers();
   } catch (error) {
     console.error(error);
     $('#loadStatus').textContent = error.message || t('loadFailed');
@@ -212,6 +229,8 @@ function resetScanState() {
   state.files = [];
   state.questions = [];
   state.nameBox = null;
+  state.scoreBox = null;
+  state.selectedAreas.clear();
   state.grades = {};
   state.names = [];
   state.fingerprint = null;
@@ -267,6 +286,8 @@ $('#keyFirst').addEventListener('change', () => {
   if (!state.allPages.length) return;
   state.questions = [];
   state.nameBox = null;
+  state.scoreBox = null;
+  state.selectedAreas.clear();
   state.grades = {};
   state.selectedArea = null;
   state.fingerprint = scanFingerprint();
@@ -277,9 +298,14 @@ $('#keyFirst').addEventListener('change', () => {
   updateSetupReady();
   saveSession();
   if (restored) toast(t('restored'));
+  if ($('#keyFirst').checked && !state.questions.length && !detectionCache.has(setupPage())) detectAnswers();
 });
 
 function renderThumbs() {
+  const canDetect = $('#keyFirst').checked && state.allPages.length > 0;
+  $('#detectRedScan').classList.toggle('hidden', !canDetect);
+  $('#detectRedAreas').classList.toggle('hidden', !canDetect);
+  renderDetectionStatus();
   if (!state.allPages.length) return;
   const wrap = $('#pageThumbs');
   wrap.innerHTML = '';
@@ -309,6 +335,93 @@ function renderThumbs() {
 
 $('#continueToAreas').addEventListener('click', () => switchStep('areas'));
 
+function renderDetectionStatus() {
+  const result = setupPage() && detectionCache.get(setupPage());
+  $('#detectionStatus').textContent = $('#keyFirst').checked && result
+    ? t(result.regions.length ? 'detectedRegions' : 'noRedFound', { count: result.regions.length }) : '';
+}
+
+function detectAnswers(force = false) {
+  const page = setupPage();
+  if (!page || !$('#keyFirst').checked) return;
+  try {
+    let result = force ? null : detectionCache.get(page);
+    if (!result) {
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(DEFAULT_RED_OPTIONS.workingWidth, page.width);
+      canvas.height = Math.round(page.height * canvas.width / page.width);
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
+      result = detectRedRegions(ctx.getImageData(0, 0, canvas.width, canvas.height));
+      detectionCache.set(page, result);
+    }
+    const removed = state.questions.filter(isProposal);
+    const kept = state.questions.filter((question) => !isProposal(question));
+    removed.forEach((question) => {
+      Object.values(state.grades).forEach((grades) => delete grades[question.id]);
+    });
+    const overlap = (a, b) => {
+      const intersection = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
+        * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+      // IoU, or containment so parts of a merged/enlarged box are not proposed again.
+      return Math.max(intersection / (a.w * a.h + b.w * b.h - intersection), intersection / (b.w * b.h) - 0.2);
+    };
+    // Continue after the highest kept Qn so a rerun never duplicates a label.
+    const lastNumber = Math.max(kept.length, ...kept.map((q) => Number(/^Q(\d+)$/.exec(q.label || '')?.[1]) || 0));
+    const proposals = sortReadingOrder(result.regions).filter((region) => !kept.some((q) => overlap(q, region) > 0.3))
+      .map((region, index) => ({
+        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-auto-${index}`,
+        label: `Q${lastNumber + index + 1}`, type: region.kind === 'matching' ? 'matching' : 'written',
+        points: 1, expected: '', x: region.x, y: region.y, w: region.w, h: region.h,
+        origin: 'auto', confirmed: false, detectConfidence: region.confidence, uncertain: region.uncertain,
+      }));
+    state.questions = [...kept, ...proposals];
+    selectArea(null);
+    refreshAreas();
+    renderDetectionStatus();
+    toast(t(result.regions.length ? 'detectedRegions' : 'noRedFound', { count: result.regions.length }));
+  } catch (error) {
+    console.error(error);
+    toast(t('detectionFailed'));
+  }
+}
+
+function confirmProposals() {
+  state.questions.forEach((question) => { if (isProposal(question)) question.confirmed = true; });
+  refreshAreas();
+}
+
+function acceptProposals() {
+  const count = state.questions.filter(isProposal).length;
+  if (!count) return true;
+  if (!confirm(t('acceptProposals', { count }))) return false;
+  confirmProposals();
+  return true;
+}
+
+$('#detectRedScan').addEventListener('click', () => detectAnswers(true));
+$('#detectRedAreas').addEventListener('click', () => detectAnswers(true));
+$('#confirmAll').addEventListener('click', confirmProposals);
+$('#renumberAreas').addEventListener('click', () => {
+  state.questions = sortReadingOrder(state.questions);
+  // Relabelling is not verification, so proposals stay unconfirmed.
+  state.questions.forEach((question, index) => { question.label = `Q${index + 1}`; });
+  refreshAreas();
+});
+$('#mergeAreas').addEventListener('click', () => {
+  const selected = sortReadingOrder(state.questions.filter((q) => state.selectedAreas.has(q.id)));
+  if (selected.length < 2) return;
+  const first = selected[0];
+  const x = Math.min(...selected.map((q) => q.x)), y = Math.min(...selected.map((q) => q.y));
+  const right = Math.max(...selected.map((q) => q.x + q.w)), bottom = Math.max(...selected.map((q) => q.y + q.h));
+  const removed = new Set(selected.slice(1).map((q) => q.id));
+  state.questions = state.questions.filter((q) => !removed.has(q.id));
+  Object.values(state.grades).forEach((grades) => removed.forEach((id) => delete grades[id]));
+  Object.assign(first, { x, y, w: right - x, h: bottom - y, confirmed: true });
+  selectArea(first.id);
+  refreshAreas();
+});
+
 function renderSetupCanvas(tempRect = null) {
   const page = setupPage();
   if (!page) return;
@@ -319,7 +432,8 @@ function renderSetupCanvas(tempRect = null) {
   ctx.drawImage(page.canvas, 0, 0);
   state.questions.forEach((question, index) => drawArea(ctx, question, index, false));
   if (state.nameBox) drawArea(ctx, state.nameBox, 0, true);
-  if (tempRect) drawArea(ctx, tempRect, state.questions.length, tempRect.kind === 'name', true);
+  if (state.scoreBox) drawArea(ctx, state.scoreBox, 0, 'score');
+  if (tempRect) drawArea(ctx, tempRect, state.questions.length, tempRect.kind === 'score' ? 'score' : tempRect.kind === 'name', true);
 }
 
 function drawArea(ctx, area, index, isName = false, temporary = false) {
@@ -328,23 +442,26 @@ function drawArea(ctx, area, index, isName = false, temporary = false) {
     y = area.y * canvas.height,
     w = area.w * canvas.width,
     h = area.h * canvas.height;
-  const selected = !temporary && state.selectedArea === (isName ? 'name' : area.id);
+  const areaKey = isName === 'score' ? 'score' : isName ? 'name' : area.id;
+  const selected = !temporary && (state.selectedArea === areaKey || state.selectedAreas.has(areaKey));
+  const proposed = !isName && isProposal(area);
+  const accent = isName || (proposed && area.uncertain) ? '#b7791f' : '#c8322b';
   ctx.save();
   ctx.fillStyle = isName ? 'rgba(183,121,31,.08)' : 'rgba(200,50,43,.08)';
-  ctx.strokeStyle = isName ? '#b7791f' : '#c8322b';
+  ctx.strokeStyle = accent;
   ctx.lineWidth = Math.max(selected ? 5 : 3, canvas.width * 0.002);
-  if (isName || temporary) ctx.setLineDash([12, 8]);
+  if (isName || temporary || proposed) ctx.setLineDash([12, 8]);
   ctx.fillRect(x, y, w, h);
   ctx.strokeRect(x, y, w, h);
   // Label sits as a tag just above the box so it never covers the printed test.
   const fs = Math.max(16, canvas.width * 0.014);
-  const label = isName ? t('nameArea') : area.label || `Q${index + 1}`;
+  const label = isName === 'score' ? t('scoreLabel') : isName ? t('nameArea') : `${area.label || `Q${index + 1}`}${proposed && area.uncertain ? ' ?' : ''}`;
   ctx.setLineDash([]);
   ctx.font = `700 ${fs}px system-ui`;
   const tagW = ctx.measureText(label).width + 12,
     tagH = fs + 8;
   const tagY = y - tagH >= 0 ? y - tagH : y;
-  ctx.fillStyle = isName ? '#b7791f' : '#c8322b';
+  ctx.fillStyle = accent;
   ctx.fillRect(x, tagY, tagW, tagH);
   ctx.fillStyle = '#fffdf8';
   ctx.fillText(label, x + 6, tagY + fs + 1);
@@ -382,6 +499,7 @@ function areaAt(point) {
   const areas = [
     ...state.questions.map((area) => ({ area, key: area.id })),
     ...(state.nameBox ? [{ area: state.nameBox, key: 'name' }] : []),
+    ...(state.scoreBox ? [{ area: state.scoreBox, key: 'score' }] : []),
   ].reverse();
   for (const entry of areas) {
     const a = entry.area,
@@ -408,7 +526,12 @@ setupCanvas.addEventListener('pointerdown', (event) => {
   const point = eventPoint(event, setupCanvas);
   const hit = areaAt(point);
   if (hit) {
-    state.selectedArea = hit.key;
+    selectArea(hit.key, event.shiftKey);
+    if (event.shiftKey) {
+      renderQuestionList();
+      renderSetupCanvas();
+      return;
+    }
     const start = { ...hit.area };
     state.interaction = {
       mode: hit.handle ? 'resize' : 'move',
@@ -422,8 +545,9 @@ setupCanvas.addEventListener('pointerdown', (event) => {
     renderSetupCanvas();
     return;
   }
-  const kind = state.tool === 'name' ? 'name' : 'question';
+  const kind = state.tool;
   state.selectedArea = null;
+  state.selectedAreas.clear();
   state.interaction = { mode: 'draw', kind, x0: point.x, y0: point.y, x: point.x, y: point.y, w: 0, h: 0 };
   renderQuestionList();
 });
@@ -467,6 +591,7 @@ setupCanvas.addEventListener('pointermove', (event) => {
     if (interaction.handle.includes('s')) bottom = Math.min(1, Math.max(top + min, s.y + s.h + dy));
     Object.assign(a, { x: left, y: top, w: right - left, h: bottom - top });
   }
+  if (a.id && (a.x !== s.x || a.y !== s.y || a.w !== s.w || a.h !== s.h)) a.confirmed = true;
   renderSetupCanvas();
 });
 
@@ -485,9 +610,9 @@ setupCanvas.addEventListener('pointerup', () => {
       w: interaction.w / setupCanvas.width,
       h: interaction.h / setupCanvas.height,
     };
-    if (interaction.kind === 'name') {
-      state.nameBox = rect;
-      state.selectedArea = 'name';
+    if (interaction.kind === 'name' || interaction.kind === 'score') {
+      state[interaction.kind === 'name' ? 'nameBox' : 'scoreBox'] = rect;
+      state.selectedArea = interaction.kind;
       state.tool = 'question';
       updateToolButtons();
     } else {
@@ -498,10 +623,13 @@ setupCanvas.addEventListener('pointerup', () => {
         type: 'written',
         points: 1,
         expected: '',
+        origin: 'manual',
+        confirmed: true,
         ...rect,
       };
       state.questions.push(question);
       state.selectedArea = question.id;
+      state.selectedAreas = new Set([question.id]);
     }
   }
   renderQuestionList();
@@ -523,28 +651,22 @@ $('#markName').addEventListener('click', () => {
   state.tool = 'name';
   updateToolButtons();
 });
+$('#markScore').addEventListener('click', () => {
+  state.tool = 'score';
+  updateToolButtons();
+});
 function updateToolButtons() {
   $('#drawQuestion').classList.toggle('active', state.tool === 'question');
   $('#markName').classList.toggle('active', state.tool === 'name');
-  $('#drawingHint').textContent = state.tool === 'name' ? t('drawingName') : '';
+  $('#markScore').classList.toggle('active', state.tool === 'score');
+  $('#drawingHint').textContent = state.tool === 'name' ? t('drawingName') : state.tool === 'score' ? t('drawingScore') : '';
 }
 
 function renderQuestionList() {
-  const nameItem = $('#nameAreaItem');
-  nameItem.classList.toggle('hidden', !state.nameBox);
-  if (state.nameBox) {
-    nameItem.className = `name-area-item ${state.selectedArea === 'name' ? 'selected' : ''}`;
-    nameItem.innerHTML = `<div class="question-item-head"><span class="question-type-icon">名</span><span class="question-label">${escapeHtml(t('nameArea'))}</span><button class="icon-button" data-delete-name>${escapeHtml(t('delete'))}</button></div>`;
-    nameItem.onclick = (event) => {
-      if (event.target.matches('[data-delete-name]')) {
-        state.nameBox = null;
-        state.selectedArea = null;
-      } else state.selectedArea = 'name';
-      renderQuestionList();
-      renderSetupCanvas();
-      saveSession();
-    };
-  }
+  renderSpecialArea('name');
+  renderSpecialArea('score');
+  $('#confirmAll').disabled = !state.questions.some(isProposal);
+  $('#mergeAreas').disabled = state.questions.filter((q) => state.selectedAreas.has(q.id)).length < 2;
   const list = $('#questionList');
   if (!state.questions.length) {
     list.className = 'question-list empty-state';
@@ -555,36 +677,136 @@ function renderQuestionList() {
   list.innerHTML = '';
   state.questions.forEach((question, index) => {
     const item = document.createElement('div');
-    item.className = `question-item ${state.selectedArea === question.id ? 'selected' : ''}`;
-    item.innerHTML = `<div class="question-item-head"><span class="question-type-icon">${TYPE_ICONS[question.type] || 'Aa'}</span><span class="question-label">${escapeHtml(question.label || `Q${index + 1}`)}</span><button class="icon-button" data-delete>${escapeHtml(t('delete'))}</button></div><div class="question-fields"><label>${escapeHtml(t('type'))}<select data-type>${['written', 'number', 'circle', 'matching'].map((type) => `<option value="${type}" ${question.type === type ? 'selected' : ''}>${escapeHtml(t(type))}</option>`).join('')}</select></label><label>${escapeHtml(t('points'))}<input data-points type="number" min="0.5" step="0.5" value="${question.points}"></label></div><label class="expected-field ${['written', 'number'].includes(question.type) ? '' : 'hidden'}">${escapeHtml(t('expected'))}<input data-expected value="${escapeHtml(question.expected || '')}" placeholder="${escapeHtml(t('expectedPlaceholder'))}"><span class="field-hint">${escapeHtml(t('expectedHint'))}</span></label>`;
+    item.dataset.questionId = question.id;
+    item.className = `question-item ${state.selectedArea === question.id || state.selectedAreas.has(question.id) ? 'selected' : ''}`;
+    const status = isProposal(question) ? question.uncertain ? 'uncertainProposal' : 'proposed' : 'confirmed';
+    item.innerHTML = `<div class="question-item-head"><span class="question-type-icon">${TYPE_ICONS[question.type] || 'Aa'}</span><input class="question-label" data-label aria-label="${escapeHtml(t('questionLabel'))}" value="${escapeHtml(question.label || `Q${index + 1}`)}"><button class="icon-button" data-delete>${escapeHtml(t('delete'))}</button></div><div class="question-fields"><label>${escapeHtml(t('type'))}<select data-type>${ANSWER_TYPES.map((type) => `<option value="${type}" ${question.type === type ? 'selected' : ''}>${escapeHtml(t(type))}</option>`).join('')}</select></label><label>${escapeHtml(t('points'))}<input data-points type="number" min="0.5" step="0.5" value="${question.points}"></label></div><label class="expected-field ${question.type !== 'matching' ? '' : 'hidden'}">${escapeHtml(t('expected'))}<input data-expected value="${escapeHtml(question.expected || '')}" placeholder="${escapeHtml(t('expectedPlaceholder'))}"><span class="field-hint">${escapeHtml(t('expectedHint'))}</span></label><p class="question-status ${isProposal(question) && question.uncertain ? 'uncertain' : ''}"><span data-status>${escapeHtml(t(status))}</span> · ${escapeHtml(t('ocrNotRun'))}</p><div class="question-order"><button data-up ${index === 0 ? 'disabled' : ''} aria-label="${escapeHtml(t('moveUp'))}">↑</button><button data-down ${index === state.questions.length - 1 ? 'disabled' : ''} aria-label="${escapeHtml(t('moveDown'))}">↓</button>${isProposal(question) ? `<button class="confirm-question" data-confirm>✓ ${escapeHtml(t('confirmQuestion'))}</button>` : ''}</div>`;
+    const crop = questionThumbnail(question);
+    if (crop) item.insertBefore(crop, item.querySelector('.question-fields'));
+    item.addEventListener('pointerdown', (event) => {
+      if (event.shiftKey) event.preventDefault();
+    }, true);
+    item.addEventListener('click', (event) => {
+      if (!event.shiftKey) {
+        selectArea(question.id);
+        list.querySelectorAll('.question-item').forEach((el) => el.classList.toggle('selected', el === item));
+        $('#mergeAreas').disabled = true;
+        renderSetupCanvas();
+        return;
+      }
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      selectArea(question.id, true);
+      renderQuestionList();
+      renderSetupCanvas();
+    }, true);
+    item.addEventListener('focusin', () => {
+      selectArea(question.id);
+      list.querySelectorAll('.question-item').forEach((el) => el.classList.toggle('selected', el === item));
+      $('#mergeAreas').disabled = true;
+      renderSetupCanvas();
+    });
     item.addEventListener('click', (event) => {
       if (event.target.matches('input,select,button')) return;
-      state.selectedArea = question.id;
+      selectArea(question.id);
       renderQuestionList();
       renderSetupCanvas();
     });
-    item.querySelector('[data-delete]').addEventListener('click', () => deleteQuestion(question.id));
-    item.querySelector('[data-type]').addEventListener('change', (event) => {
-      question.type = event.target.value;
-      renderQuestionList();
+    const edited = () => {
+      question.confirmed = true;
+      item.querySelector('[data-status]').textContent = t('confirmed');
+      item.querySelector('.question-status').classList.remove('uncertain');
+      item.querySelector('[data-confirm]')?.remove();
+      $('#confirmAll').disabled = !state.questions.some(isProposal);
       renderSetupCanvas();
       saveSession();
+    };
+    item.querySelector('[data-delete]').addEventListener('click', () => deleteQuestion(question.id));
+    item.querySelector('[data-label]').addEventListener('input', (event) => {
+      question.label = event.target.value;
+      edited();
+    });
+    item.querySelector('[data-type]').addEventListener('change', (event) => {
+      question.type = event.target.value;
+      edited();
+      renderQuestionList();
     });
     item.querySelector('[data-points]').addEventListener('input', (event) => {
       question.points = Math.max(0.5, Number(event.target.value) || 1);
-      saveSession();
+      edited();
     });
     item.querySelector('[data-expected]').addEventListener('input', (event) => {
       question.expected = event.target.value;
-      saveSession();
+      edited();
     });
+    item.querySelector('[data-confirm]')?.addEventListener('click', edited);
+    const reorder = (delta) => {
+      [state.questions[index], state.questions[index + delta]] = [state.questions[index + delta], question];
+      refreshAreas();
+    };
+    item.querySelector('[data-up]').addEventListener('click', () => reorder(-1));
+    item.querySelector('[data-down]').addEventListener('click', () => reorder(1));
     list.append(item);
   });
+  scrollSidebarTo(list.querySelector(`[data-question-id="${state.selectedArea}"]`));
+}
+
+// Scroll only the sticky sidebar; scrollIntoView would also scroll the window and shift the canvas under the pointer.
+function scrollSidebarTo(item) {
+  const sidebar = item?.closest('.question-sidebar');
+  if (!sidebar) return;
+  const bounds = sidebar.getBoundingClientRect(),
+    rect = item.getBoundingClientRect();
+  if (rect.top < bounds.top) sidebar.scrollTop += rect.top - bounds.top;
+  else if (rect.bottom > bounds.bottom) sidebar.scrollTop += Math.min(rect.bottom - bounds.bottom, rect.top - bounds.top);
+}
+
+function renderSpecialArea(kind) {
+  const item = $(`#${kind}AreaItem`);
+  const field = kind === 'name' ? 'nameBox' : 'scoreBox';
+  item.className = `name-area-item ${state[field] ? '' : 'hidden'} ${state.selectedArea === kind ? 'selected' : ''}`;
+  if (!state[field]) return;
+  item.innerHTML = `<div class="question-item-head"><span>${escapeHtml(t(kind === 'name' ? 'nameArea' : 'scoreArea'))}</span><button class="icon-button" data-delete-special>${escapeHtml(t('delete'))}</button></div>`;
+  item.onclick = (event) => {
+    if (event.target.matches('[data-delete-special]')) { state[field] = null; selectArea(null); }
+    else selectArea(kind);
+    refreshAreas();
+  };
+}
+
+function questionThumbnail(question) {
+  const page = setupPage();
+  if (!page) return null;
+  const geometry = [question.x, question.y, question.w, question.h].join(',');
+  let cached = keyCropCache.get(question);
+  if (!cached || cached.geometry !== geometry || cached.page !== page) {
+    const canvas = makeCropCanvas(page.canvas, question, 240, 110);
+    canvas.className = 'question-thumbnail';
+    cached = { geometry, page, canvas };
+    keyCropCache.set(question, cached);
+  }
+  return cached.canvas;
+}
+
+function selectArea(id, additive = false) {
+  if (!additive) state.selectedAreas.clear();
+  if (id && id !== 'name' && id !== 'score') state.selectedAreas.add(id);
+  state.selectedArea = id;
+  $('#nameAreaItem').classList.toggle('selected', id === 'name');
+  $('#scoreAreaItem').classList.toggle('selected', id === 'score');
+}
+
+function refreshAreas() {
+  renderQuestionList();
+  renderSetupCanvas();
+  updateSetupReady();
+  saveSession();
 }
 
 function deleteQuestion(id) {
   state.questions = state.questions.filter((question) => question.id !== id);
   Object.values(state.grades).forEach((grades) => delete grades[id]);
+  state.selectedAreas.delete(id);
   if (state.selectedArea === id) state.selectedArea = null;
   renderQuestionList();
   renderSetupCanvas();
@@ -608,9 +830,11 @@ function updateSetupReady() {
 }
 
 $('#clearAreas').addEventListener('click', () => {
-  if ((state.questions.length || state.nameBox) && !confirm(t('clearConfirm'))) return;
+  if ((state.questions.length || state.nameBox || state.scoreBox) && !confirm(t('clearConfirm'))) return;
   state.questions = [];
   state.nameBox = null;
+  state.scoreBox = null;
+  state.selectedAreas.clear();
   state.grades = {};
   state.selectedArea = null;
   renderQuestionList();
@@ -663,11 +887,98 @@ function renderGradeView() {
     state.selectedStudent = visible[0].index;
   const grid = $('#gradeGrid');
   grid.innerHTML = '';
+  renderMatchingReview(question, visible.length > 0);
   if (!visible.length) {
     grid.innerHTML = `<div class="no-cards">${escapeHtml(t('noCards'))}</div>`;
     return;
   }
   visible.forEach(({ page, index, grade }) => grid.append(makeStudentCard(page, index, question, grade)));
+}
+
+function matchingCounts(detail, connections = detail.connections || {}) {
+  const expected = detail.expected || {};
+  const leftIds = (detail.leftNodes || []).map((node) => node.id);
+  const correct = leftIds.filter((id) => expected[id] && connections[id] === expected[id]).length;
+  return { correct, total: leftIds.length };
+}
+
+function renderMatchingReview(question, hasVisibleStudent) {
+  $('#matchingReview')?.remove();
+  const record = state.grades[state.selectedStudent]?.[question.id];
+  if (question.type !== 'matching' || !record?.detail || !hasVisibleStudent) return;
+  const detail = record.detail;
+  const panel = document.createElement('section');
+  panel.id = 'matchingReview';
+  panel.className = 'matching-review';
+  const heading = document.createElement('h2');
+  heading.textContent = t('matchingReview');
+  const crops = document.createElement('div');
+  crops.className = 'matching-review-crops';
+  [[t('keyAnswer'), setupPage()], [t('matchingStudent'), studentPages()[state.selectedStudent]]]
+    .forEach(([label, page]) => {
+      const figure = document.createElement('figure');
+      const caption = document.createElement('figcaption');
+      caption.textContent = label;
+      figure.append(caption, makeCropCanvas(page.canvas, question, 1100, 1100));
+      crops.append(figure);
+    });
+  const rows = document.createElement('div');
+  rows.className = 'matching-review-rows';
+  const selects = new Map();
+  const expected = detail.expected || {};
+  const connections = detail.connections || {};
+  (detail.leftNodes || []).forEach((node) => {
+    const row = document.createElement('label');
+    const uncertain = (detail.uncertain || []).includes(node.id);
+    row.className = `matching-review-row${uncertain ? ' uncertain' : ''}`;
+    const summary = document.createElement('span');
+    const actual = connections[node.id];
+    const correct = actual && actual === expected[node.id];
+    summary.textContent = `${node.id} → ${actual || '?'} ${uncertain ? '⚠' : correct ? '✓' : '✗'}${!correct && expected[node.id] ? ` (${t('matchingExpected', { node: expected[node.id] })})` : ''}`;
+    const select = document.createElement('select');
+    select.setAttribute('aria-label', t('matchingConnection', { node: node.id }));
+    const none = document.createElement('option');
+    none.value = '';
+    none.textContent = t('matchingNone');
+    select.append(none);
+    (detail.rightNodes || []).forEach((right) => {
+      const option = document.createElement('option');
+      option.value = right.id;
+      option.textContent = right.id;
+      select.append(option);
+    });
+    select.value = actual || '';
+    selects.set(node.id, select);
+    row.append(summary, select);
+    rows.append(row);
+  });
+  const apply = document.createElement('button');
+  apply.className = 'primary';
+  apply.textContent = t('matchingApply');
+  apply.disabled = !selects.size;
+  apply.onclick = () => {
+    const corrected = Object.fromEntries([...selects].map(([id, select]) => [id, select.value || null]));
+    const { correct, total } = matchingCounts(detail, corrected);
+    Object.assign(record, {
+      status: correct === total ? 'correct' : correct ? 'partial' : 'wrong',
+      credit: correct / total,
+      source: 'teacher',
+      flagged: false,
+      detail: {
+        ...detail,
+        connections: corrected,
+        uncertain: [],
+        mismatches: [...selects.keys()].filter((id) => !expected[id] || corrected[id] !== expected[id])
+          .map((id) => ({ left: id, expected: expected[id], actual: corrected[id] })),
+      },
+    });
+    delete record.confidence;
+    delete record.reading;
+    saveSession();
+    renderGradeView();
+  };
+  panel.append(heading, crops, rows, apply);
+  $('.grade-context').after(panel);
 }
 
 function renderQuestionTabs() {
@@ -716,6 +1027,13 @@ function makeStudentCard(page, index, question, grade) {
   chip.className = `status-chip ${grade.flagged ? 'flagged' : grade.status || ''}`;
   chip.textContent = grade.flagged ? t('needsReview') : statusLabel(grade.status);
   top.append(chip);
+  // An unresolved matching result has no trustworthy count, so only graded records show one.
+  if (question.type === 'matching' && grade.detail && grade.status && !grade.flagged) {
+    const credit = document.createElement('span');
+    credit.className = 'matching-credit';
+    credit.textContent = t('matchingCredit', matchingCounts(grade.detail));
+    top.append(credit);
+  }
   const crop = makeCropCanvas(page.canvas, question);
   crop.className = 'answer-crop';
   const note = document.createElement('div');
@@ -779,9 +1097,7 @@ function statusLabel(status) {
 function setGrade(studentIndex, status, advance = false) {
   const question = state.questions[state.activeQuestion],
     record = state.grades[studentIndex][question.id];
-  Object.assign(record, { status, source: 'teacher', flagged: false });
-  delete record.reading;
-  delete record.confidence;
+  assignTeacherGrade(record, status);
   state.selectedStudent = studentIndex;
   saveSession();
   if (advance) advanceSelection();
@@ -791,6 +1107,10 @@ function setGrade(studentIndex, status, advance = false) {
       .querySelector(`.student-card[data-student="${state.selectedStudent}"]`)
       ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
   );
+}
+function assignTeacherGrade(record, status) {
+  Object.assign(record, { status, source: 'teacher', flagged: false });
+  ['reading', 'confidence', 'credit', 'detail', 'note'].forEach((key) => delete record[key]);
 }
 function firstUngraded(questionIndex) {
   const question = state.questions[questionIndex];
@@ -821,7 +1141,7 @@ $('#markRemaining').addEventListener('click', () => {
   studentPages().forEach((_, index) => {
     const record = state.grades[index][question.id];
     if (!record.status && !record.flagged)
-      Object.assign(record, { status: 'correct', source: 'teacher', flagged: false });
+      assignTeacherGrade(record, 'correct');
   });
   saveSession();
   renderGradeView();
@@ -832,18 +1152,29 @@ $('#autoGrade').addEventListener('click', async () => {
   const button = $('#autoGrade');
   button.disabled = true;
   button.textContent = t('autoRunning');
-  const keyCrop = makeCropCanvas(setupPage().canvas, question);
+  const cropSize = question.type === 'matching' ? [1100, 1100] : [];
+  const keyCrop = makeCropCanvas(setupPage().canvas, question, ...cropSize);
   try {
     for (let index = 0; index < studentPages().length; index++) {
       const record = state.grades[index][question.id];
       if (record.source === 'teacher') continue;
-      const studentCrop = makeCropCanvas(studentPages()[index].canvas, question);
+      const studentCrop = makeCropCanvas(studentPages()[index].canvas, question, ...cropSize);
       const result = await runGrader(question.type, {
         question,
         expected: question.expected,
         keyCrop,
         studentCrop,
       });
+      if (record.source === 'teacher') continue;
+      delete record.credit;
+      delete record.detail;
+      if (question.type === 'matching' && result) {
+        record.credit = Number.isFinite(result.credit) ? Math.max(0, Math.min(1, result.credit)) : null;
+        record.detail = Object.fromEntries(
+          ['connections', 'expected', 'uncertain', 'mismatches', 'leftNodes', 'rightNodes', 'stage']
+            .map((key) => [key, result[key]]),
+        );
+      }
       if (result?.confidence < 0.8 || result?.status == null)
         Object.assign(record, {
           status: null,
@@ -876,9 +1207,11 @@ document.addEventListener('keydown', (event) => {
     event.key === 'Delete' &&
     !event.target.matches('input,select,textarea')
   ) {
-    if (state.selectedArea === 'name') {
-      state.nameBox = null;
+    if (state.selectedArea === 'name' || state.selectedArea === 'score') {
+      if (state.selectedArea === 'name') state.nameBox = null;
+      else state.scoreBox = null;
       state.selectedArea = null;
+      state.selectedAreas.clear();
       renderQuestionList();
       renderSetupCanvas();
       saveSession();
@@ -916,10 +1249,12 @@ function scoreForStudent(index) {
     graded = 0;
   state.questions.forEach((question) => {
     max += question.points;
-    const status = state.grades[index]?.[question.id]?.status;
+    const record = state.grades[index]?.[question.id];
+    const status = record?.status;
     if (status) graded++;
     if (status === 'correct') score += question.points;
-    else if (status === 'partial') score += question.points / 2;
+    else if (status === 'partial')
+      score += question.points * (Number.isFinite(record.credit) ? Math.max(0, Math.min(1, record.credit)) : 0.5);
   });
   return { score, max, graded, percent: max ? (score / max) * 100 : 0 };
 }
@@ -1040,7 +1375,7 @@ function openPrintWindow(calibration = false) {
   if (!pagesForStudents.length || !state.questions.length) return;
   if (!calibration) {
     const count = pagesForStudents.filter((_, pi) =>
-      state.questions.some((q) => !state.grades[pi]?.[q.id]?.status),
+      state.questions.some((q) => !state.grades[pi]?.[q.id]?.status || state.grades[pi]?.[q.id]?.flagged),
     ).length;
     if (count && !confirm(t('ungradedConfirm', { count }))) return;
   }
@@ -1097,7 +1432,8 @@ function makeOverlayCanvas(pi, calibration = false) {
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   state.questions.forEach((q, qi) => {
-    const status = calibration ? 'correct' : state.grades[pi]?.[q.id]?.status;
+    const record = state.grades[pi]?.[q.id];
+    const status = calibration ? 'correct' : record?.flagged ? null : record?.status;
     if (!status) return;
     const x = q.x * c.width,
       y = q.y * c.height,
@@ -1115,15 +1451,31 @@ function makeOverlayCanvas(pi, calibration = false) {
     }
   });
   const { score, max } = scoreForStudent(pi);
-  if (!calibration) {
+  const reviewed = state.questions.every((q) => {
+    const record = state.grades[pi]?.[q.id];
+    return record?.status && !record.flagged;
+  });
+  if (!calibration && reviewed) {
     ctx.save();
-    const fs = Math.max(28, c.width * 0.032);
-    ctx.font = `800 ${fs}px system-ui`;
-    ctx.textAlign = 'right';
-    ctx.textBaseline = 'top';
-    ctx.fillText(`${formatNum(score)}/${formatNum(max)}`, c.width * 0.965, c.height * 0.025);
+    const text = `${formatNum(score)}/${formatNum(max)}`;
+    if (state.scoreBox) {
+      const box = state.scoreBox;
+      let fs = box.h * c.height * 0.75;
+      ctx.font = `800 ${fs}px system-ui`;
+      fs *= Math.min(1, box.w * c.width * 0.9 / Math.max(1, ctx.measureText(text).width));
+      ctx.font = `800 ${fs}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, (box.x + box.w / 2) * c.width, (box.y + box.h / 2) * c.height);
+    } else {
+      const fs = Math.max(28, c.width * 0.032);
+      ctx.font = `800 ${fs}px system-ui`;
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillText(text, c.width * 0.965, c.height * 0.025);
+    }
     ctx.restore();
-  } else {
+  } else if (calibration) {
     ctx.save();
     const fs = Math.max(22, c.width * 0.023);
     ctx.font = `800 ${fs}px system-ui`;

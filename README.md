@@ -4,19 +4,19 @@ A no-install, browser-based tool for grading a stack of one-page student tests a
 
 ## Workflow
 
-1. **Scan** — choose one PDF or a set of JPG/PNG scans. “First page is the answer key” is on by default. The key page is not counted as a student and is never printed. If the same scan has saved work, PaperGrader offers to resume it.
-2. **Answer areas** — draw question boxes on the answer key, choose each answer type, points, and an optional expected answer. Boxes can be selected, moved, resized, and deleted. A separate name area can also be marked.
-3. **Grade** — review one question across the class. Question tabs show progress and flagged counts; the key crop stays visible above compact student cards. Filter all, ungraded, or needs-review cards, or mark all remaining unflagged answers correct. Use the buttons or keyboard shortcuts below.
+1. **Scan** — choose one PDF or a set of JPG/PNG scans. “First page is the answer key” is on by default. With no saved question areas, red ink on the key is detected locally once and proposed as answer areas. Use **Detect red answers** to run it again. The key page is not counted as a student and is never printed. If the same scan has saved work, PaperGrader offers to resume it.
+2. **Answer areas** — review the proposed boxes or draw your own. Dashed red boxes are proposals; amber boxes need a closer check. Confirm individually or all at once; editing a proposal also confirms it. The sidebar is the linear answer key: edit labels, inspect key thumbnails, choose types, points, and optional expected answers, and reorder or renumber by position. Shift-click boxes or sidebar items to select several and merge them. Separate name and score areas can also be marked.
+3. **Grade** — review one question across the class. Question tabs show progress and flagged counts; the key crop stays visible above compact student cards. The local matching-lines grader awards proportional credit and flags uncertain answers. Select a matching card to inspect key/student crops and correct detected connections in the review panel, then Apply. Filter all, ungraded, or needs-review cards, or mark all remaining unflagged answers correct. Use the buttons or keyboard shortcuts below.
 4. **Results** — edit student names, review totals, percentages, per-question marks, class average, and question correct rates. Export a UTF-8-with-BOM CSV for Japanese Excel.
-5. **Print** — print only the red ○ / △ / × marks and scores onto the re-fed originals, with paper size, X/Y offset, reverse order, rotation, and alignment-test controls.
+5. **Print** — print only the red ○ / △ / × marks and scores onto the re-fed originals, with paper size, X/Y offset, reverse order, rotation, and alignment-test controls. Scores are centred inside the optional score area, otherwise at the existing top-right position. A student with any ungraded or flagged answer receives no printed total; graded, unflagged answer marks still print. Alignment-test output is unchanged.
 
-The app includes a frozen grader registry for later auto-graders. No auto-graders are registered in v2 build 1, so the auto-grade button remains hidden.
+The app uses a grader registry and includes a local matching-lines grader. Other answer types remain available for teacher grading; additional graders can register through the same interface. All detection and matching processing stays in the browser.
 
 ## Current limits
 
-- No automatic graders are included yet.
+- Automatic grading currently covers matching lines; handwriting recognition is not included.
 - One physical test page per student.
-- Partial credit is fixed at half the question's points.
+- Matching credit is the fraction of expected connections answered correctly. A manually assigned partial grade without matching review remains half the question's points.
 - The normal browser print dialog is used; the app does not silently control the printer.
 - Scan pages are assumed to be in the correct student order.
 
@@ -71,12 +71,12 @@ After the final student, grading advances to the next question's first ungraded 
 
 The app does not upload student pages. PDF rendering via the CDN fallback downloads JavaScript code from jsDelivr; it does not send the selected PDF to jsDelivr. For a fully self-contained deployment, host the PDF.js files locally as described above.
 
-Question definitions, grades, names, and print settings are stored in the browser. Scanned page images are not stored. Re-select the same scan to restore its saved session.
+Question definitions (including proposal status), grades (including matching review details and credit), names, name/score areas, and print settings are stored in the browser. Scanned page images and key thumbnails are not stored; thumbnails are cached in memory by question geometry. Re-select the same scan to restore its saved session.
 
 ## Likely next work
 
 1. Test and calibrate alignment with a real copier.
-2. Implement and register graders for circle choices, written words, numbers, and matching.
+2. Extend local recognition and add graders for circle choices, written words, and numbers.
 3. Reduce full-grid rerendering and page-canvas memory use for large classes.
 4. Add reusable templates and multi-page or duplex tests.
-5. Add configurable partial credit and score placement.
+5. Explore a split-box tool and stronger page-identity rekeying for changed scans.

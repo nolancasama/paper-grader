@@ -61,10 +61,14 @@
         <div id="pagePreviewWrap" class="preview-wrap hidden">
           <div class="section-heading">
             <p id="pageCountText"></p>
+            <div class="button-row">
+            <button id="detectRedScan" class="ghost hidden" data-i18n="detectRedAnswers">Detect red answers</button>
             <button id="continueToAreas" class="primary" data-i18n="continueAreas">
               Define answer areas →
             </button>
+            </div>
           </div>
+          <p id="detectionStatus" class="status-line" role="status"></p>
           <div id="pageThumbs" class="thumb-grid"></div>
         </div>
       </section>
@@ -83,6 +87,11 @@
           <button id="drawQuestion" class="tool-button active" data-i18n="drawQuestion">
             Add answer area</button
           ><button id="markName" class="tool-button" data-i18n="markName">Mark name area</button
+          ><button id="markScore" class="tool-button" data-i18n="markScore">Mark score area</button
+          ><button id="detectRedAreas" class="ghost hidden" data-i18n="detectRedAnswers">Detect red answers</button
+          ><button id="confirmAll" class="ghost" disabled data-i18n="confirmAll">Confirm all</button
+          ><button id="mergeAreas" class="ghost" disabled data-i18n="mergeAreas">Merge</button
+          ><button id="renumberAreas" class="ghost" data-i18n="renumberAreas">Renumber by position</button
           ><span id="drawingHint" class="muted"></span
           ><button id="clearAreas" class="ghost danger push-right" data-i18n="clearAreas">Clear all</button>
         </div>
@@ -91,6 +100,7 @@
           <aside class="question-sidebar">
             <h2 data-i18n="questions">Questions</h2>
             <div id="nameAreaItem" class="name-area-item hidden"></div>
+            <div id="scoreAreaItem" class="name-area-item hidden"></div>
             <div id="questionList" class="question-list empty-state" data-i18n="noQuestions">
               No answer areas yet.
             </div>

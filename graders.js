@@ -1,7 +1,10 @@
 const graders = new Map();
+const fallbacks = new Map();
+
+export const ANSWER_TYPES = ['written', 'number', 'circle', 'matching', 'checkbox', 'short'];
 
 export function registerGrader(type, fn) {
-  if (!['written', 'number', 'circle', 'matching'].includes(type)) {
+  if (!ANSWER_TYPES.includes(type)) {
     throw new TypeError(`Unknown grader type: ${type}`);
   }
   if (typeof fn !== 'function') throw new TypeError('Grader must be a function');
@@ -18,10 +21,33 @@ export async function runGrader(type, input) {
   return grader(input);
 }
 
-// Example grader registration (no grader is registered in v2 build 1):
-// registerGrader('written', async ({ question, expected, keyCrop, studentCrop }) => ({
+// Fallbacks receive only a question crop and local endpoint coordinates, never a page.
+export function registerFallback(type, fn) {
+  if (!ANSWER_TYPES.includes(type)) throw new TypeError(`Unknown grader type: ${type}`);
+  if (typeof fn !== 'function') throw new TypeError('Fallback must be a function');
+  fallbacks.set(type, fn);
+}
+
+export function hasFallback(type) {
+  return fallbacks.has(type);
+}
+
+export function getFallback(type) {
+  return fallbacks.get(type);
+}
+
+// Example matching result (graders register from their own modules):
+// registerGrader('matching', async ({ question, expected, keyCrop, studentCrop }) => ({
 //   status: 'correct', // 'correct' | 'partial' | 'wrong' | null
 //   confidence: 0.93, // 0..1
-//   reading: expected,
-//   note: `Compared ${question.label} with the answer key`,
+//   credit: 1, // fraction correct; null when status is null
+//   correctMatches: 3, totalMatches: 3,
+//   mismatches: [], // [{ left: 'L1', expected: 'R3', actual: 'R2' | null }]
+//   expected: { L1: 'R3', L2: 'R1', L3: 'R2' },
+//   connections: { L1: 'R3', L2: 'R1', L3: 'R2' },
+//   uncertain: [], // left node IDs
+//   leftNodes: [{ id: 'L1', x: 0.1, y: 0.2 }], // normalized crop coordinates
+//   rightNodes: [{ id: 'R1', x: 0.9, y: 0.2 }],
+//   stage: 'similarity', // 'similarity' | 'graph' | 'review'
+//   note: '3 of 3 matches correct',
 // }));

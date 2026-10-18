@@ -1,10 +1,12 @@
-const CACHE = 'papergrader-v2-build1-v3';
+const CACHE = 'papergrader-v2-build1-v4';
 const CORE = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './graders.js',
+  './redDetect.js',
+  './graders/matching.js',
   './i18n.js',
   './manifest.webmanifest',
 ];
