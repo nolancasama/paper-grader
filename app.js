@@ -228,64 +228,35 @@ async function ensurePdfJs() {
   throw new Error(`${t('pdfLoadFailed')} ${lastError?.message || ''}`);
 }
 
-$('#fileInput').addEventListener('change', async (event) => {
-  const files = [...event.target.files].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
-  );
-  if (!files.length) return;
-  resetScanState();
-  state.files = files;
-  $('#loadStatus').textContent = t('loading');
-  try {
-    for (const file of files) {
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) await loadPdf(file);
-      else if (file.type.startsWith('image/')) await loadImage(file);
-    }
-    if (!state.allPages.length || ($('#keyFirst').checked && state.allPages.length < 2))
-      throw new Error(t('noReadable'));
-    state.fingerprint = scanFingerprint();
-    state.names = studentPages().map((_, index) => t('studentDefault', { number: index + 1 }));
-    const restored = restoreSession(state.fingerprint);
-    $('#loadStatus').textContent = '';
-    $('#pageCountText').textContent = t('pagesReady', { count: studentPages().length });
-    $('#pagePreviewWrap').classList.remove('hidden');
-    renderThumbs();
-    enableStep('areas');
-    $('#continueToAreas').disabled = false;
-    updateSetupReady();
-    if (restored) toast(t('restored'));
-    if ($('#keyFirst').checked && !state.questions.length) detectAnswers();
-  } catch (error) {
-    console.error(error);
-    $('#loadStatus').textContent = error.message || t('loadFailed');
-    toast(t('loadFailed'));
-  }
-});
-
-function resetScanState() {
-  state.allPages = [];
-  state.files = [];
+function resetDerivedForSetupChange() {
+  state.alignedKeyPage = null;
+  state.setupAlignment = null;
   state.questions = [];
   state.nameBox = null;
   state.scoreBox = null;
   state.selectedAreas.clear();
   state.grades = {};
   state.names = [];
+  state.allPages = [];
+  state.files = [];
+  state.studentFingerprint = null;
+  state.restoredSession = null;
   state.fingerprint = null;
-  state.activeQuestion = 0;
-  state.selectedStudent = 0;
-  state.selectedArea = null;
-  state.interaction = null;
-  ['areas', 'grade', 'results', 'print'].forEach((id) => enableStep(id, false));
+  state.lastDetection = null;
+  ['areas', 'students', 'grade', 'results', 'print'].forEach((id) => enableStep(id, false));
+  $('#continueToAreas').disabled = true;
+  $('#continueToStudents').disabled = true;
   $('#continueToGrade').disabled = true;
-  $('#pagePreviewWrap').classList.add('hidden');
+  $('#setupPreviewWrap').classList.add('hidden');
+  $('#studentPreviewWrap').classList.add('hidden');
 }
 
-async function loadPdf(file) {
+async function loadPdfPages(file, statusElement) {
   const pdfjs = await ensurePdfJs();
   const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages = [];
   for (let number = 1; number <= pdf.numPages; number++) {
-    $('#loadStatus').textContent = t('renderingPdf', { page: number, total: pdf.numPages });
+    if (statusElement) statusElement.textContent = t('renderingPdf', { page: number, total: pdf.numPages });
     const page = await pdf.getPage(number);
     const base = page.getViewport({ scale: 1 });
     const scale = Math.min(2.2, Math.max(1.15, 1900 / Math.max(base.width, base.height)));
@@ -297,16 +268,12 @@ async function loadPdf(file) {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: ctx, viewport }).promise;
-    state.allPages.push({
-      canvas,
-      width: canvas.width,
-      height: canvas.height,
-      source: `${file.name} · page ${number}`,
-    });
+    pages.push({ canvas, width: canvas.width, height: canvas.height, source: file.name + ' · page ' + number });
   }
+  return pages;
 }
 
-async function loadImage(file) {
+async function loadImagePage(file) {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, 1900 / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
@@ -317,73 +284,273 @@ async function loadImage(file) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
-  state.allPages.push({ canvas, width: canvas.width, height: canvas.height, source: file.name });
+  return { canvas, width: canvas.width, height: canvas.height, source: file.name };
 }
 
-$('#keyFirst').addEventListener('change', () => {
-  if (!state.allPages.length) return;
-  state.questions = [];
-  state.nameBox = null;
-  state.scoreBox = null;
-  state.selectedAreas.clear();
-  state.grades = {};
-  state.selectedArea = null;
-  state.fingerprint = scanFingerprint();
-  state.names = studentPages().map((_, index) => t('studentDefault', { number: index + 1 }));
-  const restored = restoreSession(state.fingerprint);
-  $('#pageCountText').textContent = t('pagesReady', { count: studentPages().length });
-  renderThumbs();
+async function loadFiles(files, statusElement) {
+  const pages = [];
+  for (const file of files) {
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))
+      pages.push(...await loadPdfPages(file, statusElement));
+    else if (file.type.startsWith('image/'))
+      pages.push(await loadImagePage(file));
+  }
+  return pages;
+}
+
+function imageDataForAlignment(canvas, maxWidth = 850) {
+  const width = Math.min(maxWidth, canvas.width);
+  const height = Math.max(1, Math.round(canvas.height * width / canvas.width));
+  const work = document.createElement('canvas');
+  work.width = width;
+  work.height = height;
+  const ctx = work.getContext('2d', { alpha: false, willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(canvas, 0, 0, width, height);
+  return ctx.getImageData(0, 0, width, height);
+}
+
+function alignPageToTemplate(page) {
+  const reference = templatePage();
+  if (!reference || !page) return null;
+  const alignment = estimateAlignment(
+    imageDataForAlignment(reference.canvas),
+    imageDataForAlignment(page.canvas),
+  );
+  const normalized = document.createElement('canvas');
+  normalized.width = reference.width;
+  normalized.height = reference.height;
+  const normalizedCtx = normalized.getContext('2d', { alpha: false });
+  normalizedCtx.fillStyle = '#fff';
+  normalizedCtx.fillRect(0, 0, normalized.width, normalized.height);
+  normalizedCtx.drawImage(page.canvas, 0, 0, normalized.width, normalized.height);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = reference.width;
+  canvas.height = reference.height;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const m = inverseCanvasTransform(alignment, canvas.width, canvas.height);
+  ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+  ctx.drawImage(normalized, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  return {
+    canvas,
+    width: canvas.width,
+    height: canvas.height,
+    source: page.source,
+    rawCanvas: page.canvas,
+    alignment,
+    alignmentAccepted: false,
+  };
+}
+
+function alignmentPercent(page) {
+  return Math.round((page?.alignment?.confidence || 0) * 100);
+}
+
+function alignmentTrusted(page) {
+  return Boolean(page?.alignmentAccepted || (page?.alignment?.confidence ?? 0) >= ALIGNMENT_REVIEW_THRESHOLD);
+}
+
+async function loadSetupRole(role, file) {
+  const status = $('#' + role + 'Status');
+  status.textContent = t('loading');
+  try {
+    const pages = await loadFiles([file], status);
+    if (!pages.length) throw new Error(t('noReadable'));
+    resetDerivedForSetupChange();
+    state.setupFiles[role] = file;
+    state[role === 'blank' ? 'blankPage' : 'keyPage'] = pages[0];
+    if (pages.length > 1) toast(t('usingFirstPage'));
+    status.textContent = pages[0].source;
+    await prepareSetup();
+  } catch (error) {
+    console.error(error);
+    status.textContent = error.message || t('loadFailed');
+  }
+}
+
+async function prepareSetup() {
+  if (!state.blankPage || !state.keyPage) return;
+  $('#setupPreviewWrap').classList.remove('hidden');
+  $('#setupStatus').textContent = t('aligningKey');
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  state.alignedKeyPage = alignPageToTemplate(state.keyPage);
+  state.setupAlignment = state.alignedKeyPage.alignment;
+  state.fingerprint = setupFingerprint();
+  const restored = restoreSetupSession(state.fingerprint);
+  $('#setupStatus').textContent = t('setupReady');
+  const percent = alignmentPercent(state.alignedKeyPage);
+  $('#alignmentStatus').textContent = t(
+    alignmentTrusted(state.alignedKeyPage) ? 'alignmentGood' : 'alignmentLow',
+    { percent },
+  );
+  renderSetupThumbs();
+  enableStep('areas');
+  $('#continueToAreas').disabled = false;
+  if (!restored && !state.questions.length) detectDifferenceAnswers();
+  else {
+    renderDetectionStatus();
+    toast(t('restored'));
+  }
   updateSetupReady();
-  saveSession();
-  if (restored) toast(t('restored'));
-  if ($('#keyFirst').checked && !state.questions.length && !detectionCache.has(setupPage())) detectAnswers();
+}
+
+$('#blankInput').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (file) loadSetupRole('blank', file);
 });
 
-function renderThumbs() {
-  const canDetect = $('#keyFirst').checked && state.allPages.length > 0;
-  $('#detectRedScan').classList.toggle('hidden', !canDetect);
-  $('#detectRedAreas').classList.toggle('hidden', !canDetect);
-  renderDetectionStatus();
-  if (!state.allPages.length) return;
-  const wrap = $('#pageThumbs');
-  wrap.innerHTML = '';
-  state.allPages.slice(0, 24).forEach((page, index) => {
-    const isKey = $('#keyFirst').checked && index === 0;
-    const item = document.createElement('div');
-    item.className = `thumb ${isKey ? 'key' : ''}`;
-    const canvas = document.createElement('canvas');
-    canvas.width = 180;
-    canvas.height = Math.round((180 * page.height) / page.width);
-    canvas.getContext('2d').drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
-    const label = document.createElement('div');
-    label.className = 'thumb-label';
-    label.textContent = isKey
-      ? t('keyBadge')
-      : t('studentBadge', { number: index + ($('#keyFirst').checked ? 0 : 1) });
-    item.append(canvas, label);
-    if (isKey) {
-      const badge = document.createElement('span');
-      badge.className = 'thumb-badge';
-      badge.textContent = t('keyBadge');
-      item.append(badge);
-    }
-    wrap.append(item);
-  });
+$('#keyInput').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (file) loadSetupRole('key', file);
+});
+
+function thumbCanvas(page) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 180;
+  canvas.height = Math.round(180 * page.height / page.width);
+  canvas.getContext('2d').drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }
 
-$('#continueToAreas').addEventListener('click', () => switchStep('areas'));
+function appendThumb(wrap, page, labelText, badgeText, className = '') {
+  const item = document.createElement('div');
+  item.className = 'thumb ' + className;
+  item.append(thumbCanvas(page));
+  const label = document.createElement('div');
+  label.className = 'thumb-label';
+  label.textContent = labelText;
+  item.append(label);
+  if (badgeText) {
+    const badge = document.createElement('span');
+    badge.className = 'thumb-badge';
+    badge.textContent = badgeText;
+    item.append(badge);
+  }
+  wrap.append(item);
+  return item;
+}
+
+function renderSetupThumbs() {
+  const wrap = $('#setupThumbs');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  if (state.blankPage) appendThumb(wrap, state.blankPage, t('blankTest'), t('blankBadge'));
+  if (state.keyPage) appendThumb(wrap, state.keyPage, t('answerKey'), t('keyBadge'), 'key');
+  if (state.alignedKeyPage)
+    appendThumb(wrap, state.alignedKeyPage, t('alignedKeyBadge'), alignmentPercent(state.alignedKeyPage) + '%', 'key');
+  renderDetectionStatus();
+}
+
+function getDetectionCache(page) {
+  let entry = detectionCache.get(page);
+  if (!entry) {
+    entry = {};
+    detectionCache.set(page, entry);
+  }
+  return entry;
+}
+
+function applyDetectedRegions(result, detector) {
+  state.lastDetection = { detector, result };
+  const removed = state.questions.filter(isProposal);
+  const kept = state.questions.filter((question) => !isProposal(question));
+  removed.forEach((question) => {
+    Object.values(state.grades).forEach((grades) => delete grades[question.id]);
+  });
+  const overlap = (a, b) => {
+    const intersection = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
+      * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    return Math.max(
+      intersection / Math.max(1e-8, a.w * a.h + b.w * b.h - intersection),
+      intersection / Math.max(1e-8, b.w * b.h) - 0.2,
+    );
+  };
+  const lastNumber = Math.max(
+    kept.length,
+    ...kept.map((q) => Number(/^Q(\d+)$/.exec(q.label || '')?.[1]) || 0),
+  );
+  const proposals = sortReadingOrder(result.regions)
+    .filter((region) => !kept.some((q) => overlap(q, region) > 0.3))
+    .map((region, index) => ({
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-auto-' + index,
+      label: 'Q' + (lastNumber + index + 1),
+      type: region.kind === 'matching' ? 'matching' : 'written',
+      points: 1,
+      expected: '',
+      x: region.x,
+      y: region.y,
+      w: region.w,
+      h: region.h,
+      origin: 'auto',
+      detector,
+      confirmed: false,
+      detectConfidence: region.confidence,
+      uncertain: region.uncertain,
+    }));
+  state.questions = [...kept, ...proposals];
+  selectArea(null);
+  refreshAreas();
+  renderDetectionStatus();
+}
 
 function renderDetectionStatus() {
-  const result = setupPage() && detectionCache.get(setupPage());
-  $('#detectionStatus').textContent = $('#keyFirst').checked && result
-    ? t(result.regions.length ? 'detectedRegions' : 'noRedFound', { count: result.regions.length }) : '';
+  const status = $('#detectionStatus');
+  if (!status) return;
+  const last = state.lastDetection;
+  if (!last) {
+    status.textContent = '';
+    return;
+  }
+  const count = last.result.regions.length;
+  const key = count
+    ? (last.detector === 'difference' ? 'detectedChanges' : 'detectedRegions')
+    : (last.detector === 'difference' ? 'noChangesFound' : 'noRedFound');
+  status.textContent = t(key, { count });
 }
 
-function detectAnswers(force = false) {
-  const page = setupPage();
-  if (!page || !$('#keyFirst').checked) return;
+function detectDifferenceAnswers(force = false) {
+  const key = setupPage();
+  const blank = templatePage();
+  if (!key || !blank) return;
   try {
-    let result = force ? null : detectionCache.get(page);
+    const cache = getDetectionCache(key);
+    let result = force ? null : cache.difference;
+    if (!result) {
+      const width = Math.min(1100, blank.width);
+      const height = Math.round(blank.height * width / blank.width);
+      const get = (page) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(page.canvas, 0, 0, width, height);
+        return ctx.getImageData(0, 0, width, height);
+      };
+      result = detectDifferenceRegions(get(blank), get(key));
+      cache.difference = result;
+    }
+    applyDetectedRegions(result, 'difference');
+    toast(t(result.regions.length ? 'detectedChanges' : 'noChangesFound', { count: result.regions.length }));
+  } catch (error) {
+    console.error(error);
+    toast(t('detectionFailed'));
+  }
+}
+
+function detectRedAnswers(force = false) {
+  const page = setupPage();
+  if (!page) return;
+  try {
+    const cache = getDetectionCache(page);
+    let result = force ? null : cache.red;
     if (!result) {
       const canvas = document.createElement('canvas');
       canvas.width = Math.min(DEFAULT_RED_OPTIONS.workingWidth, page.width);
@@ -391,32 +558,9 @@ function detectAnswers(force = false) {
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
       result = detectRedRegions(ctx.getImageData(0, 0, canvas.width, canvas.height));
-      detectionCache.set(page, result);
+      cache.red = result;
     }
-    const removed = state.questions.filter(isProposal);
-    const kept = state.questions.filter((question) => !isProposal(question));
-    removed.forEach((question) => {
-      Object.values(state.grades).forEach((grades) => delete grades[question.id]);
-    });
-    const overlap = (a, b) => {
-      const intersection = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
-        * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
-      // IoU, or containment so parts of a merged/enlarged box are not proposed again.
-      return Math.max(intersection / (a.w * a.h + b.w * b.h - intersection), intersection / (b.w * b.h) - 0.2);
-    };
-    // Continue after the highest kept Qn so a rerun never duplicates a label.
-    const lastNumber = Math.max(kept.length, ...kept.map((q) => Number(/^Q(\d+)$/.exec(q.label || '')?.[1]) || 0));
-    const proposals = sortReadingOrder(result.regions).filter((region) => !kept.some((q) => overlap(q, region) > 0.3))
-      .map((region, index) => ({
-        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-auto-${index}`,
-        label: `Q${lastNumber + index + 1}`, type: region.kind === 'matching' ? 'matching' : 'written',
-        points: 1, expected: '', x: region.x, y: region.y, w: region.w, h: region.h,
-        origin: 'auto', confirmed: false, detectConfidence: region.confidence, uncertain: region.uncertain,
-      }));
-    state.questions = [...kept, ...proposals];
-    selectArea(null);
-    refreshAreas();
-    renderDetectionStatus();
+    applyDetectedRegions(result, 'red');
     toast(t(result.regions.length ? 'detectedRegions' : 'noRedFound', { count: result.regions.length }));
   } catch (error) {
     console.error(error);
@@ -424,8 +568,16 @@ function detectAnswers(force = false) {
   }
 }
 
+$('#detectChangesScan').addEventListener('click', () => detectDifferenceAnswers(true));
+$('#detectChangesAreas').addEventListener('click', () => detectDifferenceAnswers(true));
+$('#detectRedScan').addEventListener('click', () => detectRedAnswers(true));
+$('#detectRedAreas').addEventListener('click', () => detectRedAnswers(true));
+$('#continueToAreas').addEventListener('click', () => switchStep('areas'));
+
 function confirmProposals() {
-  state.questions.forEach((question) => { if (isProposal(question)) question.confirmed = true; });
+  state.questions.forEach((question) => {
+    if (isProposal(question)) question.confirmed = true;
+  });
   refreshAreas();
 }
 
@@ -437,27 +589,145 @@ function acceptProposals() {
   return true;
 }
 
-$('#detectRedScan').addEventListener('click', () => detectAnswers(true));
-$('#detectRedAreas').addEventListener('click', () => detectAnswers(true));
 $('#confirmAll').addEventListener('click', confirmProposals);
+
 $('#renumberAreas').addEventListener('click', () => {
   state.questions = sortReadingOrder(state.questions);
-  // Relabelling is not verification, so proposals stay unconfirmed.
-  state.questions.forEach((question, index) => { question.label = `Q${index + 1}`; });
+  state.questions.forEach((question, index) => {
+    question.label = 'Q' + (index + 1);
+  });
   refreshAreas();
 });
+
 $('#mergeAreas').addEventListener('click', () => {
   const selected = sortReadingOrder(state.questions.filter((q) => state.selectedAreas.has(q.id)));
   if (selected.length < 2) return;
   const first = selected[0];
-  const x = Math.min(...selected.map((q) => q.x)), y = Math.min(...selected.map((q) => q.y));
-  const right = Math.max(...selected.map((q) => q.x + q.w)), bottom = Math.max(...selected.map((q) => q.y + q.h));
+  const x = Math.min(...selected.map((q) => q.x));
+  const y = Math.min(...selected.map((q) => q.y));
+  const right = Math.max(...selected.map((q) => q.x + q.w));
+  const bottom = Math.max(...selected.map((q) => q.y + q.h));
   const removed = new Set(selected.slice(1).map((q) => q.id));
   state.questions = state.questions.filter((q) => !removed.has(q.id));
   Object.values(state.grades).forEach((grades) => removed.forEach((id) => delete grades[id]));
   Object.assign(first, { x, y, w: right - x, h: bottom - y, confirmed: true });
   selectArea(first.id);
   refreshAreas();
+});
+
+async function loadStudents(files) {
+  $('#studentLoadStatus').textContent = t('loading');
+  const rawPages = await loadFiles(files, $('#studentLoadStatus'));
+  if (!rawPages.length) throw new Error(t('noReadable'));
+  state.files = files;
+  state.allPages = [];
+  for (let index = 0; index < rawPages.length; index++) {
+    $('#studentLoadStatus').textContent = t('aligningStudent', { page: index + 1, total: rawPages.length });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    state.allPages.push(alignPageToTemplate(rawPages[index]));
+  }
+  state.studentFingerprint = makeStudentFingerprint();
+  restoreStudentSession();
+  $('#studentLoadStatus').textContent = t('pagesReady', { count: state.allPages.length });
+  $('#studentPreviewWrap').classList.remove('hidden');
+  renderStudentThumbs();
+  updateSetupReady();
+  saveSession();
+}
+
+$('#studentInput').addEventListener('change', async (event) => {
+  const files = [...event.target.files].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
+  );
+  if (!files.length) return;
+  try {
+    await loadStudents(files);
+  } catch (error) {
+    console.error(error);
+    $('#studentLoadStatus').textContent = error.message || t('loadFailed');
+  }
+});
+
+function renderStudentThumbs() {
+  const wrap = $('#studentThumbs');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const pages = studentPages();
+  if (!pages.length) return;
+  let good = 0;
+  pages.slice(0, 60).forEach((page, index) => {
+    const trusted = alignmentTrusted(page);
+    if (trusted) good++;
+    const item = appendThumb(
+      wrap,
+      page,
+      t('studentBadge', { number: index + 1 }),
+      null,
+      trusted ? '' : 'alignment-review',
+    );
+    const meta = document.createElement('div');
+    meta.className = 'alignment-meta';
+    const score = document.createElement('span');
+    score.className = 'alignment-score ' + (trusted ? 'good' : 'review');
+    score.textContent = alignmentPercent(page) + '%';
+    meta.append(score);
+    if (!trusted) {
+      const review = document.createElement('button');
+      review.className = 'ghost';
+      review.textContent = t('reviewAlignment');
+      review.onclick = () => openAlignmentReview(index);
+      meta.append(review);
+    }
+    item.append(meta);
+  });
+  $('#studentPageCountText').textContent = t('pagesReady', { count: pages.length });
+  $('#studentAlignmentSummary').textContent = t('alignmentSummary', {
+    good,
+    total: pages.length,
+    review: pages.length - good,
+  });
+}
+
+let alignmentReviewIndex = null;
+
+function drawAlignmentOverlay() {
+  if (alignmentReviewIndex == null) return;
+  const page = studentPages()[alignmentReviewIndex];
+  const blank = templatePage();
+  if (!page || !blank) return;
+  const canvas = $('#alignmentOverlayCanvas');
+  const maxW = 820;
+  canvas.width = Math.min(maxW, blank.width);
+  canvas.height = Math.round(blank.height * canvas.width / blank.width);
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(blank.canvas, 0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = Number($('#alignmentOpacity').value) || 0.5;
+  ctx.drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1;
+}
+
+function openAlignmentReview(index) {
+  alignmentReviewIndex = index;
+  const page = studentPages()[index];
+  $('#alignmentDialogStatus').textContent = t(
+    alignmentTrusted(page) ? 'alignmentGood' : 'alignmentLow',
+    { percent: alignmentPercent(page) },
+  );
+  drawAlignmentOverlay();
+  $('#alignmentDialog').showModal();
+}
+
+$('#alignmentOpacity').addEventListener('input', drawAlignmentOverlay);
+$('#closeAlignmentDialog').addEventListener('click', () => $('#alignmentDialog').close());
+$('#acceptAlignment').addEventListener('click', () => {
+  const page = studentPages()[alignmentReviewIndex];
+  if (page) page.alignmentAccepted = true;
+  $('#alignmentDialog').close();
+  renderStudentThumbs();
+  saveSession();
 });
 
 function renderSetupCanvas(tempRect = null) {
