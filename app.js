@@ -1128,10 +1128,16 @@ function escapeHtml(value = '') {
   );
 }
 function updateSetupReady() {
-  const ready = state.questions.length > 0 && studentPages().length > 0;
-  $('#continueToGrade').disabled = !ready;
-  enableStep('grade', ready);
-  if (!ready) {
+  const setupReady = Boolean(setupPage() && templatePage());
+  const areasReady = setupReady && state.questions.length > 0;
+  const gradeReady = areasReady && studentPages().length > 0;
+  $('#continueToAreas').disabled = !setupReady;
+  $('#continueToStudents').disabled = !areasReady;
+  $('#continueToGrade').disabled = !gradeReady;
+  enableStep('areas', setupReady);
+  enableStep('students', areasReady);
+  enableStep('grade', gradeReady);
+  if (!gradeReady) {
     enableStep('results', false);
     enableStep('print', false);
   }
@@ -1149,6 +1155,10 @@ $('#clearAreas').addEventListener('click', () => {
   renderSetupCanvas();
   updateSetupReady();
   saveSession();
+});
+$('#continueToStudents').addEventListener('click', () => {
+  if (!acceptProposals()) return;
+  switchStep('students');
 });
 $('#continueToGrade').addEventListener('click', () => {
   state.activeQuestion = 0;
