@@ -18,58 +18,41 @@
     <header class="topbar">
       <a class="brand" href="#" data-i18n="appName">PaperGrader</a>
       <nav class="steps" aria-label="Workflow" data-i18n-aria="workflow">
-        <button class="step active" data-step="scan"><b>1</b><span data-i18n="scan">Scan</span></button>
-        <button class="step" data-step="areas" disabled>
-          <b>2</b><span data-i18n="answerAreas">Answer areas</span>
-        </button>
-        <button class="step" data-step="grade" disabled><b>3</b><span data-i18n="grade">Grade</span></button>
-        <button class="step" data-step="results" disabled>
-          <b>4</b><span data-i18n="results">Results</span>
-        </button>
-        <button class="step" data-step="print" disabled><b>5</b><span data-i18n="print">Print</span></button>
+        <button class="step active" data-step="scan"><b>1</b><span data-i18n="setup">Setup</span></button>
+        <button class="step" data-step="areas" disabled><b>2</b><span data-i18n="answerAreas">Answer areas</span></button>
+        <button class="step" data-step="students" disabled><b>3</b><span data-i18n="students">Students</span></button>
+        <button class="step" data-step="grade" disabled><b>4</b><span data-i18n="grade">Grade</span></button>
+        <button class="step" data-step="results" disabled><b>5</b><span data-i18n="results">Results</span></button>
+        <button class="step" data-step="print" disabled><b>6</b><span data-i18n="print">Print</span></button>
       </nav>
       <button id="languageToggle" class="language-toggle" data-i18n="language">日本語 / EN</button>
     </header>
     <main>
       <section id="scan" class="panel active">
         <div id="savedSessionBanner" class="saved-banner hidden" role="status"></div>
-        <div class="scan-card">
+        <div class="section-heading">
           <div>
-            <p class="eyebrow" data-i18n="scan">Scan</p>
-            <h1 data-i18n="scanTitle">Load the answer stack</h1>
-            <p class="muted" data-i18n="scanHelp">
-              Choose a PDF or images in student order. Processing stays on this device.
-            </p>
-          </div>
-          <div class="scan-actions">
-            <label class="file-button"
-              ><input
-                id="fileInput"
-                type="file"
-                accept="application/pdf,image/png,image/jpeg,image/webp"
-                multiple
-              /><span data-i18n="chooseFiles">Choose PDF or images</span></label
-            >
-            <label class="switch-row"
-              ><input id="keyFirst" type="checkbox" checked /><span data-i18n="keyFirst"
-                >First page is the answer key</span
-              ></label
-            >
-            <div id="loadStatus" class="status-line" data-i18n="nothingLoaded">Nothing loaded yet.</div>
+            <p class="eyebrow" data-i18n="setup">Setup</p>
+            <h1 data-i18n="setupTitle">Prepare the test template</h1>
+            <p class="muted" data-i18n="setupHelp">Load a blank original test and the same test completed by the teacher.</p>
           </div>
         </div>
-        <div id="pagePreviewWrap" class="preview-wrap hidden">
-          <div class="section-heading">
-            <p id="pageCountText"></p>
-            <div class="button-row">
-            <button id="detectRedScan" class="ghost hidden" data-i18n="detectRedAnswers">Detect red answers</button>
-            <button id="continueToAreas" class="primary" data-i18n="continueAreas">
-              Define answer areas →
-            </button>
-            </div>
+        <div class="setup-input-grid">
+          <div class="scan-card setup-card">
+            <div><p class="eyebrow" data-i18n="blankTest">Blank test</p><h2 data-i18n="blankTestTitle">1. Blank original</h2><p class="muted" data-i18n="blankTestHelp">The untouched test becomes the coordinate template.</p></div>
+            <div class="scan-actions"><label class="file-button"><input id="blankInput" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span data-i18n="chooseBlank">Choose blank test</span></label><div id="blankStatus" class="status-line" data-i18n="nothingLoaded">Nothing loaded yet.</div></div>
           </div>
-          <p id="detectionStatus" class="status-line" role="status"></p>
-          <div id="pageThumbs" class="thumb-grid"></div>
+          <div class="scan-card setup-card">
+            <div><p class="eyebrow" data-i18n="answerKey">Answer key</p><h2 data-i18n="answerKeyTitle">2. Completed key</h2><p class="muted" data-i18n="answerKeyHelp">Use the same test with the correct answers filled in. Any pen color is OK.</p></div>
+            <div class="scan-actions"><label class="file-button"><input id="keyInput" type="file" accept="application/pdf,image/png,image/jpeg,image/webp"><span data-i18n="chooseKey">Choose completed key</span></label><div id="keyStatus" class="status-line" data-i18n="nothingLoaded">Nothing loaded yet.</div></div>
+          </div>
+        </div>
+        <div id="setupPreviewWrap" class="preview-wrap hidden">
+          <div class="section-heading">
+            <div><p id="setupStatus"></p><p id="alignmentStatus" class="status-line" role="status"></p><p id="detectionStatus" class="status-line" role="status"></p></div>
+            <div class="button-row"><button id="detectChangesScan" class="ghost" data-i18n="detectChanges">Detect changes</button><button id="detectRedScan" class="ghost" data-i18n="detectRedAnswers">Detect red answers</button><button id="continueToAreas" class="primary" disabled data-i18n="continueAreas">Define answer areas →</button></div>
+          </div>
+          <div id="setupThumbs" class="thumb-grid setup-thumbs"></div>
         </div>
       </section>
       <section id="areas" class="panel">
@@ -79,8 +62,8 @@
             <h1 data-i18n="areasTitle">Define answer areas</h1>
             <p class="muted" data-i18n="areasHelp">Drag on the key page to create a box.</p>
           </div>
-          <button id="continueToGrade" class="primary" disabled data-i18n="startGrade">
-            Start grading →
+          <button id="continueToStudents" class="primary" disabled data-i18n="continueStudents">
+            Load student scans →
           </button>
         </div>
         <div class="area-toolbar">
@@ -88,7 +71,8 @@
             Add answer area</button
           ><button id="markName" class="tool-button" data-i18n="markName">Mark name area</button
           ><button id="markScore" class="tool-button" data-i18n="markScore">Mark score area</button
-          ><button id="detectRedAreas" class="ghost hidden" data-i18n="detectRedAnswers">Detect red answers</button
+          ><button id="detectChangesAreas" class="ghost" data-i18n="detectChanges">Detect changes</button
+          ><button id="detectRedAreas" class="ghost" data-i18n="detectRedAnswers">Detect red answers</button
           ><button id="confirmAll" class="ghost" disabled data-i18n="confirmAll">Confirm all</button
           ><button id="mergeAreas" class="ghost" disabled data-i18n="mergeAreas">Merge</button
           ><button id="renumberAreas" class="ghost" data-i18n="renumberAreas">Renumber by position</button
@@ -106,6 +90,11 @@
             </div>
           </aside>
         </div>
+      </section>
+      <section id="students" class="panel">
+        <div class="section-heading"><div><p class="eyebrow" data-i18n="students">Students</p><h1 data-i18n="studentsTitle">Load student papers</h1><p class="muted" data-i18n="studentsHelp">Choose the separate student scan PDF. One student sheet per page.</p></div><button id="continueToGrade" class="primary" disabled data-i18n="startGrade">Start grading →</button></div>
+        <div class="scan-card student-scan-card"><div><h2 data-i18n="studentScan">Student scan stack</h2><p class="muted" data-i18n="studentScanHelp">Every page is aligned to the blank test before grading.</p></div><div class="scan-actions"><label class="file-button"><input id="studentInput" type="file" accept="application/pdf,image/png,image/jpeg,image/webp" multiple><span data-i18n="chooseStudentScans">Choose student PDF / images</span></label><div id="studentLoadStatus" class="status-line" data-i18n="nothingLoaded">Nothing loaded yet.</div></div></div>
+        <div id="studentPreviewWrap" class="preview-wrap hidden"><div class="section-heading"><div><p id="studentPageCountText"></p><p id="studentAlignmentSummary" class="status-line"></p></div></div><div id="studentThumbs" class="thumb-grid"></div></div>
       </section>
       <section id="grade" class="panel grade-panel">
         <div id="questionTabs" class="question-tabs"></div>
@@ -195,6 +184,13 @@
         <p class="small-note" data-i18n="printDialogTip">Use actual size in the print dialog.</p>
       </section>
     </main>
+    <dialog id="alignmentDialog" class="alignment-dialog">
+      <div class="alignment-dialog-head"><h2 data-i18n="alignmentReviewTitle">Review page alignment</h2><button id="closeAlignmentDialog" class="ghost" data-i18n="close">Close</button></div>
+      <p id="alignmentDialogStatus" class="status-line"></p>
+      <div class="alignment-overlay-wrap"><canvas id="alignmentOverlayCanvas"></canvas></div>
+      <label class="opacity-control"><span data-i18n="overlayOpacity">Student overlay opacity</span><input id="alignmentOpacity" type="range" min="0" max="1" step="0.05" value="0.5"></label>
+      <div class="button-row"><button id="acceptAlignment" class="primary" data-i18n="acceptAlignment">Accept this alignment</button></div>
+    </dialog>
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
     <script type="module" src="./app.js"></script>
   </body>
