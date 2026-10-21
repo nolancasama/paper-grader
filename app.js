@@ -1,6 +1,6 @@
 import { ANSWER_TYPES, hasGrader, runGrader } from './graders.js';
 import { detectRedRegions, sortReadingOrder, DEFAULT_RED_OPTIONS } from './redDetect.js';
-import { detectDifferenceRegions, estimateAlignment, inverseCanvasTransform, DEFAULT_ALIGNMENT_OPTIONS } from './alignment.js';
+import { detectDifferenceRegions, estimateAlignment, forwardCanvasTransform, inverseCanvasTransform, DEFAULT_ALIGNMENT_OPTIONS } from './alignment.js';
 import { applyI18n, getLanguage, setLanguage, t } from './i18n.js';
 import './graders/matching.js';
 
@@ -1499,6 +1499,8 @@ $('#autoGrade').addEventListener('click', async () => {
       if (record.source === 'teacher') continue;
       delete record.credit;
       delete record.detail;
+      delete record.note;
+      delete record.alignmentConfidence;
       if (question.type === 'matching' && result) {
         record.credit = Number.isFinite(result.credit) ? Math.max(0, Math.min(1, result.credit)) : null;
         record.detail = Object.fromEntries(
@@ -1757,6 +1759,9 @@ function makeOverlayCanvas(pi, calibration = false) {
   c.height = base.height;
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, c.width, c.height);
+  // Areas live in template coordinates; map them back onto the physical sheet as scanned.
+  const m = forwardCanvasTransform(base.alignment, c.width, c.height);
+  ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
   ctx.strokeStyle = '#d00000';
   ctx.fillStyle = '#d00000';
   ctx.lineWidth = Math.max(3, c.width * 0.0025);

@@ -233,6 +233,19 @@ export function inverseCanvasTransform(alignment, width, height) {
   };
 }
 
+// Maps template coordinates onto the (size-normalized) raw page, e.g. for printing marks on the physical sheet.
+export function forwardCanvasTransform(alignment, width, height) {
+  const scale = Number.isFinite(alignment?.scale) && alignment.scale > 0 ? alignment.scale : 1;
+  const angle = (Number(alignment?.angleDeg) || 0) * Math.PI / 180;
+  const a = scale * Math.cos(angle), b = scale * Math.sin(angle), c = -b, d = a;
+  const cx = width / 2, cy = height / 2;
+  return {
+    a, b, c, d,
+    e: cx + (Number(alignment?.dx) || 0) * width - a * cx - c * cy,
+    f: cy + (Number(alignment?.dy) || 0) * height - b * cx - d * cy,
+  };
+}
+
 function walk(mask, width, height, start, queue) {
   let head = 0, tail = 0;
   queue[tail++] = start;

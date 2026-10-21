@@ -312,8 +312,411 @@ function detectRedRegions(imageData, options = {}) {
 return { DEFAULT_RED_OPTIONS, isRedPixel, redMask, sortReadingOrder, detectRedRegions };
 })();
 
-// graders/matching.js
+// alignment.js
 const offlineModule2 = (() => {
+const DEFAULT_ALIGNMENT_OPTIONS = {
+  workingWidth: 420,
+  sampleLimit: 850,
+  minReferenceDarkness: 34,
+  maxAngleDeg: 2,
+  coarseScaleDelta: 0.015,
+  localShift: 0.014,
+  reviewThreshold: 0.78,
+};
+
+const DEFAULT_DIFFERENCE_OPTIONS = {
+  workingWidth: 1100,
+  minDarkening: 30,
+  minColorDistance: 52,
+  minSaturation: 0.16,
+  speckArea: 0.000003,
+  joinRadius: 0.006,
+  minRegionArea: 0.000022,
+  padding: 0.007,
+  matchingPadding: 0.032,
+};
+
+const clamp = (value, low = 0, high = 1) => Math.max(low, Math.min(high, value));
+
+function validateImage(image) {
+  if (!image || !Number.isInteger(image.width) || !Number.isInteger(image.height)
+      || image.width < 1 || image.height < 1 || !image.data
+      || image.data.length < image.width * image.height * 4) {
+    throw new TypeError('Expected an RGBA ImageData-like object');
+  }
+}
+
+function resample(image, width, height) {
+  validateImage(image);
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    const sy = Math.min(image.height - 1, Math.floor((y + 0.5) * image.height / height));
+    for (let x = 0; x < width; x++) {
+      const sx = Math.min(image.width - 1, Math.floor((x + 0.5) * image.width / width));
+      const source = (sy * image.width + sx) * 4;
+      const target = (y * width + x) * 4;
+      data[target] = image.data[source];
+      data[target + 1] = image.data[source + 1];
+      data[target + 2] = image.data[source + 2];
+      data[target + 3] = image.data[source + 3] ?? 255;
+    }
+  }
+  return { width, height, data };
+}
+
+function lumaData(image) {
+  const out = new Float32Array(image.width * image.height);
+  for (let p = 0, i = 0; p < out.length; p++, i += 4) {
+    const alpha = (image.data[i + 3] ?? 255) / 255;
+    const r = 255 - (255 - image.data[i]) * alpha;
+    const g = 255 - (255 - image.data[i + 1]) * alpha;
+    const b = 255 - (255 - image.data[i + 2]) * alpha;
+    out[p] = 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+  return out;
+}
+
+function darknessData(image) {
+  const luma = lumaData(image);
+  for (let i = 0; i < luma.length; i++) luma[i] = 255 - luma[i];
+  return luma;
+}
+
+function maxFilter(values, width, height, radius = 1) {
+  const out = new Float32Array(values.length);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    let best = 0;
+    for (let dy = -radius; dy <= radius; dy++) {
+      const yy = y + dy;
+      if (yy < 0 || yy >= height) continue;
+      for (let dx = -radius; dx <= radius; dx++) {
+        const xx = x + dx;
+        if (xx >= 0 && xx < width) best = Math.max(best, values[yy * width + xx]);
+      }
+    }
+    out[y * width + x] = best;
+  }
+  return out;
+}
+
+function minFilter(values, width, height, radius = 1) {
+  const out = new Float32Array(values.length);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+    let best = 255;
+    for (let dy = -radius; dy <= radius; dy++) {
+      const yy = y + dy;
+      if (yy < 0 || yy >= height) continue;
+      for (let dx = -radius; dx <= radius; dx++) {
+        const xx = x + dx;
+        if (xx >= 0 && xx < width) best = Math.min(best, values[yy * width + xx]);
+      }
+    }
+    out[y * width + x] = best;
+  }
+  return out;
+}
+
+function weightedCentroid(values, width, height, threshold) {
+  let sx = 0, sy = 0, total = 0;
+  for (let y = 1; y < height - 1; y++) for (let x = 1; x < width - 1; x++) {
+    const value = values[y * width + x];
+    if (value < threshold) continue;
+    const weight = Math.min(2, value / threshold);
+    sx += x * weight;
+    sy += y * weight;
+    total += weight;
+  }
+  return total ? { x: sx / total, y: sy / total } : { x: width / 2, y: height / 2 };
+}
+
+function referenceSamples(dark, width, height, options) {
+  const candidates = [];
+  const marginX = Math.max(2, Math.round(width * 0.025));
+  const marginY = Math.max(2, Math.round(height * 0.02));
+  for (let y = marginY; y < height - marginY; y++) for (let x = marginX; x < width - marginX; x++) {
+    const p = y * width + x;
+    if (dark[p] < options.minReferenceDarkness) continue;
+    const gradient = Math.abs(dark[p + 1] - dark[p - 1]) + Math.abs(dark[p + width] - dark[p - width]);
+    if (gradient < 20) continue;
+    candidates.push({ x, y, darkness: dark[p], weight: Math.min(2, 0.5 + gradient / 80) });
+  }
+  if (!candidates.length) return [];
+  const stride = Math.max(1, Math.ceil(candidates.length / options.sampleLimit));
+  return candidates.filter((_, index) => index % stride === 0).slice(0, options.sampleLimit);
+}
+
+function scoreTransform(samples, targetDark, width, height, transform) {
+  if (!samples.length) return 0;
+  const angle = transform.angleDeg * Math.PI / 180;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const cx = width / 2, cy = height / 2;
+  const dx = transform.dx * width, dy = transform.dy * height;
+  let score = 0, total = 0;
+  for (const sample of samples) {
+    const px = sample.x - cx, py = sample.y - cy;
+    const x = Math.round(cx + transform.scale * (cos * px - sin * py) + dx);
+    const y = Math.round(cy + transform.scale * (sin * px + cos * py) + dy);
+    total += sample.weight;
+    if (x < 0 || x >= width || y < 0 || y >= height) continue;
+    const target = targetDark[y * width + x];
+    const required = Math.max(24, sample.darkness * 0.32);
+    score += sample.weight * clamp(target / required);
+  }
+  return total ? score / total : 0;
+}
+
+function transformedCentroid(point, width, height, angleDeg, scale) {
+  const angle = angleDeg * Math.PI / 180;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const cx = width / 2, cy = height / 2;
+  const x = point.x - cx, y = point.y - cy;
+  return {
+    x: cx + scale * (cos * x - sin * y),
+    y: cy + scale * (sin * x + cos * y),
+  };
+}
+
+function estimateAlignment(referenceImage, targetImage, options = {}) {
+  validateImage(referenceImage);
+  validateImage(targetImage);
+  const settings = { ...DEFAULT_ALIGNMENT_OPTIONS, ...options };
+  const width = Math.min(settings.workingWidth, referenceImage.width);
+  const height = Math.max(1, Math.round(referenceImage.height * width / referenceImage.width));
+  const reference = resample(referenceImage, width, height);
+  const target = resample(targetImage, width, height);
+  const referenceDark = darknessData(reference);
+  const targetDarkRaw = darknessData(target);
+  const targetDark = maxFilter(targetDarkRaw, width, height, 1);
+  const samples = referenceSamples(referenceDark, width, height, settings);
+  if (samples.length < 25) {
+    return { angleDeg: 0, scale: 1, dx: 0, dy: 0, quality: 0, confidence: 0, sampleCount: samples.length };
+  }
+  const refCenter = weightedCentroid(referenceDark, width, height, settings.minReferenceDarkness);
+  const targetCenter = weightedCentroid(targetDarkRaw, width, height, settings.minReferenceDarkness);
+  const angles = [-settings.maxAngleDeg, -settings.maxAngleDeg / 2, 0, settings.maxAngleDeg / 2, settings.maxAngleDeg];
+  const scales = [1 - settings.coarseScaleDelta, 1, 1 + settings.coarseScaleDelta];
+  const local = Math.max(2, Math.round(width * settings.localShift));
+  const offsets = [-local, -Math.round(local / 2), 0, Math.round(local / 2), local];
+  let best = { score: -1, angleDeg: 0, scale: 1, dx: 0, dy: 0 };
+  for (const angleDeg of angles) for (const scale of scales) {
+    const mapped = transformedCentroid(refCenter, width, height, angleDeg, scale);
+    const baseDx = targetCenter.x - mapped.x;
+    const baseDy = targetCenter.y - mapped.y;
+    for (const ox of offsets) for (const oy of offsets) {
+      const transform = { angleDeg, scale, dx: (baseDx + ox) / width, dy: (baseDy + oy) / height };
+      const score = scoreTransform(samples, targetDark, width, height, transform)
+        - Math.abs(angleDeg) * 0.001 - Math.abs(scale - 1) * 0.08;
+      if (score > best.score) best = { ...transform, score };
+    }
+  }
+  const refineAngles = [best.angleDeg - 0.5, best.angleDeg, best.angleDeg + 0.5]
+    .filter(value => Math.abs(value) <= settings.maxAngleDeg + 0.5);
+  const refineScales = [best.scale - 0.005, best.scale, best.scale + 0.005];
+  const refineShift = Math.max(1, Math.round(width * 0.004));
+  for (const angleDeg of refineAngles) for (const scale of refineScales)
+    for (const ox of [-refineShift, 0, refineShift]) for (const oy of [-refineShift, 0, refineShift]) {
+      const transform = { angleDeg, scale, dx: best.dx + ox / width, dy: best.dy + oy / height };
+      const score = scoreTransform(samples, targetDark, width, height, transform)
+        - Math.abs(angleDeg) * 0.001 - Math.abs(scale - 1) * 0.08;
+      if (score > best.score) best = { ...transform, score };
+    }
+  const quality = clamp(best.score);
+  const confidence = clamp((quality - 0.48) / 0.42);
+  return {
+    angleDeg: best.angleDeg,
+    scale: best.scale,
+    dx: best.dx,
+    dy: best.dy,
+    quality,
+    confidence,
+    sampleCount: samples.length,
+  };
+}
+
+function inverseCanvasTransform(alignment, width, height) {
+  const scale = Number.isFinite(alignment?.scale) && alignment.scale > 0 ? alignment.scale : 1;
+  const angle = -(Number(alignment?.angleDeg) || 0) * Math.PI / 180;
+  const cos = Math.cos(angle) / scale;
+  const sin = Math.sin(angle) / scale;
+  const a = cos, b = sin, c = -sin, d = cos;
+  const cx = width / 2, cy = height / 2;
+  const tx = cx + (Number(alignment?.dx) || 0) * width;
+  const ty = cy + (Number(alignment?.dy) || 0) * height;
+  return {
+    a, b, c, d,
+    e: cx - a * tx - c * ty,
+    f: cy - b * tx - d * ty,
+  };
+}
+
+// Maps template coordinates onto the (size-normalized) raw page, e.g. for printing marks on the physical sheet.
+function forwardCanvasTransform(alignment, width, height) {
+  const scale = Number.isFinite(alignment?.scale) && alignment.scale > 0 ? alignment.scale : 1;
+  const angle = (Number(alignment?.angleDeg) || 0) * Math.PI / 180;
+  const a = scale * Math.cos(angle), b = scale * Math.sin(angle), c = -b, d = a;
+  const cx = width / 2, cy = height / 2;
+  return {
+    a, b, c, d,
+    e: cx + (Number(alignment?.dx) || 0) * width - a * cx - c * cy,
+    f: cy + (Number(alignment?.dy) || 0) * height - b * cx - d * cy,
+  };
+}
+
+function walk(mask, width, height, start, queue) {
+  let head = 0, tail = 0;
+  queue[tail++] = start;
+  mask[start] = 0;
+  let count = 0, minX = width, minY = height, maxX = 0, maxY = 0;
+  while (head < tail) {
+    const index = queue[head++];
+    const x = index % width, y = Math.floor(index / width);
+    count++;
+    minX = Math.min(minX, x); minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+    for (let yy = y - 1; yy <= y + 1; yy++) for (let xx = x - 1; xx <= x + 1; xx++) {
+      if (xx < 0 || xx >= width || yy < 0 || yy >= height || (xx === x && yy === y)) continue;
+      const next = yy * width + xx;
+      if (mask[next]) {
+        mask[next] = 0;
+        queue[tail++] = next;
+      }
+    }
+  }
+  return { count, minX, minY, maxX, maxY, tail };
+}
+
+function removeSpecks(mask, width, height, minimum) {
+  const queue = new Int32Array(mask.length);
+  for (let i = 0; i < mask.length; i++) {
+    if (!mask[i]) continue;
+    const component = walk(mask, width, height, i, queue);
+    if (component.count >= minimum) for (let q = 0; q < component.tail; q++) mask[queue[q]] = 1;
+  }
+}
+
+function dilate(mask, width, height, rx, ry) {
+  const temp = new Uint8Array(mask.length), out = new Uint8Array(mask.length);
+  for (let y = 0; y < height; y++) {
+    let until = -1;
+    for (let x = 0; x < width; x++) {
+      if (mask[y * width + x]) until = x + rx;
+      if (until >= x) temp[y * width + x] = 1;
+    }
+    until = width;
+    for (let x = width - 1; x >= 0; x--) {
+      if (mask[y * width + x]) until = x - rx;
+      if (until <= x) temp[y * width + x] = 1;
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    let until = -1;
+    for (let y = 0; y < height; y++) {
+      if (temp[y * width + x]) until = y + ry;
+      if (until >= y) out[y * width + x] = 1;
+    }
+    until = height;
+    for (let y = height - 1; y >= 0; y--) {
+      if (temp[y * width + x]) until = y - ry;
+      if (until <= y) out[y * width + x] = 1;
+    }
+  }
+  return out;
+}
+
+function scaled(value, width, area = false) {
+  if (value > 1) return Math.max(1, Math.round(value));
+  return Math.max(1, Math.round(value * (area ? width * width : width)));
+}
+
+function saturation(r, g, b) {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  return max ? (max - min) / max : 0;
+}
+
+function differenceMask(blank, key, options) {
+  const blankLuma = lumaData(blank), keyLuma = lumaData(key);
+  const nearbyBlank = minFilter(blankLuma, blank.width, blank.height, 1);
+  const mask = new Uint8Array(blank.width * blank.height);
+  for (let p = 0, i = 0; p < mask.length; p++, i += 4) {
+    const kr = key.data[i], kg = key.data[i + 1], kb = key.data[i + 2];
+    const br = blank.data[i], bg = blank.data[i + 1], bb = blank.data[i + 2];
+    const darkening = nearbyBlank[p] - keyLuma[p];
+    const colorDistance = Math.hypot(kr - br, kg - bg, kb - bb);
+    const coloredAddition = colorDistance >= options.minColorDistance
+      && saturation(kr, kg, kb) >= options.minSaturation
+      && keyLuma[p] < 235 && blankLuma[p] - keyLuma[p] > 8;
+    if (darkening >= options.minDarkening || coloredAddition) mask[p] = 1;
+  }
+  return mask;
+}
+
+function detectDifferenceRegions(blankImage, keyImage, options = {}) {
+  validateImage(blankImage);
+  validateImage(keyImage);
+  const settings = { ...DEFAULT_DIFFERENCE_OPTIONS, ...options };
+  const width = Math.min(settings.workingWidth, blankImage.width);
+  const height = Math.max(1, Math.round(blankImage.height * width / blankImage.width));
+  const blank = resample(blankImage, width, height);
+  const key = resample(keyImage, width, height);
+  const clean = differenceMask(blank, key, settings);
+  removeSpecks(clean, width, height, scaled(settings.speckArea, width, true));
+  let differencePixelCount = 0;
+  for (const value of clean) differencePixelCount += value;
+  const radius = scaled(settings.joinRadius, width);
+  const joined = dilate(clean, width, height, radius, Math.max(1, Math.round(radius * 0.55)));
+  const queue = new Int32Array(clean.length);
+  const joinedCopy = joined.slice();
+  const groups = [];
+  for (let i = 0; i < joinedCopy.length; i++) {
+    if (!joinedCopy[i]) continue;
+    const component = walk(joinedCopy, width, height, i, queue);
+    groups.push({ ...component, pixels: 0, strokes: 0, longStrokes: 0 });
+  }
+  const strokeMask = clean.slice();
+  for (let i = 0; i < strokeMask.length; i++) {
+    if (!strokeMask[i]) continue;
+    const stroke = walk(strokeMask, width, height, i, queue);
+    const cx = (stroke.minX + stroke.maxX) / 2, cy = (stroke.minY + stroke.maxY) / 2;
+    const group = groups.find(g => cx >= g.minX && cx <= g.maxX && cy >= g.minY && cy <= g.maxY);
+    if (!group) continue;
+    group.pixels += stroke.count;
+    group.strokes++;
+    const sw = stroke.maxX - stroke.minX + 1, sh = stroke.maxY - stroke.minY + 1;
+    const fill = stroke.count / Math.max(1, sw * sh);
+    if (sw >= width * 0.08 && sw / Math.max(1, sh) >= 1.5 && fill < 0.48) group.longStrokes++;
+  }
+  const minimum = scaled(settings.minRegionArea, width, true);
+  const regions = [];
+  for (const group of groups) {
+    if (group.pixels < minimum) continue;
+    const boxW = group.maxX - group.minX + 1, boxH = group.maxY - group.minY + 1;
+    let inkPixels = 0;
+    for (let y = group.minY; y <= group.maxY; y++) for (let x = group.minX; x <= group.maxX; x++)
+      inkPixels += clean[y * width + x];
+    const fill = inkPixels / Math.max(1, boxW * boxH);
+    const matching = group.longStrokes >= 2 || (boxW >= width * 0.14 && boxH >= width * 0.05 && fill < 0.12 && group.strokes >= 2);
+    const padX = (matching ? settings.matchingPadding : settings.padding) * width;
+    const padY = (matching ? settings.matchingPadding * 0.5 : settings.padding) * width;
+    const x = Math.max(0, (group.minX - padX) / width);
+    const y = Math.max(0, (group.minY - padY) / height);
+    const right = Math.min(width, group.maxX + 1 + padX) / width;
+    const bottom = Math.min(height, group.maxY + 1 + padY) / height;
+    let confidence = Math.min(0.97, 0.58 + Math.min(0.28, group.pixels / Math.max(1, minimum * 12)) + Math.min(0.1, group.strokes * 0.02));
+    if (fill < 0.008 || boxW * boxH > width * height * 0.3) confidence = Math.min(confidence, 0.58);
+    regions.push({
+      x, y, w: right - x, h: bottom - y,
+      pixelCount: group.pixels, strokeCount: group.strokes,
+      confidence, uncertain: confidence < 0.65,
+      kind: matching ? 'matching' : 'answer',
+    });
+  }
+  return { width: blankImage.width, height: blankImage.height, differencePixelCount, regions };
+}
+return { DEFAULT_ALIGNMENT_OPTIONS, DEFAULT_DIFFERENCE_OPTIONS, estimateAlignment, inverseCanvasTransform, forwardCanvasTransform, detectDifferenceRegions };
+})();
+
+// graders/matching.js
+const offlineModule3 = (() => {
 const { getFallback, registerGrader } = offlineModule0;
 
 // Work on a bounded grid: topology survives scan resolution, while thinning stays cheap.
@@ -426,7 +829,7 @@ function prepare(keyImage, studentImage, options = {}) {
     const shift = bestShift(template, key.ink, width, height);
     // Bring the template into key coordinates before subtracting it from both crops.
     printed = align(template, width, height, { dx: -shift.dx, dy: -shift.dy });
-    keyInk = subtract(key.red, dilate(printed, width, height));
+    keyInk = subtract(key.ink, dilate(printed, width, height));
   }
   if (!studentImage) return { width, height, keyInk, printed };
   const student = masks(studentImage, width, height).ink;
@@ -791,18 +1194,59 @@ function gradeMatching({ keyImage, studentImage, question = {}, options = {} }) 
 }
 
 // Canvas APIs are used only when the browser invokes this registered wrapper.
-registerGrader('matching', async ({ question, keyCrop, studentCrop }) => {
+registerGrader('matching', async ({ question, keyCrop, studentCrop, templateImage }) => {
   const read = crop => crop.getContext('2d').getImageData(0, 0, crop.width, crop.height);
-  return gradeMatching({ question, keyImage: read(keyCrop), studentImage: read(studentCrop) });
+  return gradeMatching({
+    question,
+    keyImage: read(keyCrop),
+    studentImage: read(studentCrop),
+    options: templateImage ? { templateImage: read(templateImage) } : {},
+  });
 });
 return { extractKeyGraph, extractStudentGraph, webSimilarity, gradeMatching };
 })();
 
 // i18n.js
-const offlineModule3 = (() => {
+const offlineModule4 = (() => {
 const dictionaries = {
   ja: {
     appName: 'PaperGrader',
+    setup: 'セットアップ',
+    students: '答案',
+    setupTitle: 'テストのひな形を準備',
+    setupHelp: '未記入の元テストと、同じテストに正解を書き込んだ解答を別々に読み込みます。',
+    blankTest: '未記入テスト',
+    blankTestTitle: '1. 未記入の元テスト',
+    blankTestHelp: 'このページをすべての位置合わせの基準にします。',
+    answerKey: '解答',
+    answerKeyTitle: '2. 解答済みのテスト',
+    answerKeyHelp: '同じテストに正解を書き込んでください。ペンの色は問いません。',
+    chooseBlank: '未記入テストを選ぶ',
+    chooseKey: '解答を選ぶ',
+    setupReady: '未記入テストと解答の準備ができました。',
+    aligningKey: '解答を未記入テストに位置合わせ中…',
+    alignmentGood: '位置合わせ良好：{percent}%',
+    alignmentLow: '位置合わせ要確認：{percent}%',
+    detectChanges: '追加された解答を検出',
+    detectedChanges: '{count} 個の変更箇所を解答候補として検出しました',
+    noChangesFound: '未記入テストとの差分から解答候補を検出できませんでした。',
+    continueStudents: '答案スキャンへ →',
+    studentsTitle: '生徒の答案を読み込む',
+    studentsHelp: '生徒の答案だけを別のPDFで選びます。1ページにつき1人です。',
+    studentScan: '生徒答案のスキャン',
+    studentScanHelp: '採点前に各ページを未記入テストへ自動で位置合わせします。',
+    chooseStudentScans: '生徒PDF・画像を選ぶ',
+    aligningStudent: '答案 {page}/{total} を位置合わせ中…',
+    alignmentSummary: '{good}/{total} 枚は自動位置合わせ良好、{review} 枚は要確認',
+    alignmentNeedsReview: '位置合わせを確認してください',
+    reviewAlignment: '位置合わせ確認',
+    alignmentReviewTitle: 'ページの位置合わせを確認',
+    overlayOpacity: '答案の重ね表示の濃さ',
+    acceptAlignment: 'この位置合わせを承認',
+    close: '閉じる',
+    blankBadge: '未記入',
+    alignedKeyBadge: '位置合わせ済み解答',
+    usingFirstPage: '複数ページのファイルです。1ページ目だけを使用します。',
     scan: 'スキャン',
     answerAreas: '解答欄',
     grade: '採点',
@@ -936,6 +1380,42 @@ const dictionaries = {
   },
   en: {
     appName: 'PaperGrader',
+    setup: 'Setup',
+    students: 'Students',
+    setupTitle: 'Prepare the test template',
+    setupHelp: 'Load a blank original test and the same test completed by the teacher as separate files.',
+    blankTest: 'Blank test',
+    blankTestTitle: '1. Blank original',
+    blankTestHelp: 'This page becomes the coordinate template for every scan.',
+    answerKey: 'Answer key',
+    answerKeyTitle: '2. Completed key',
+    answerKeyHelp: 'Fill in the correct answers on the same test. Any pen color is OK.',
+    chooseBlank: 'Choose blank test',
+    chooseKey: 'Choose completed key',
+    setupReady: 'Blank test and completed key are ready.',
+    aligningKey: 'Aligning the completed key to the blank test…',
+    alignmentGood: 'Alignment good: {percent}%',
+    alignmentLow: 'Alignment needs review: {percent}%',
+    detectChanges: 'Detect added answers',
+    detectedChanges: '{count} changed regions detected as answer proposals',
+    noChangesFound: 'No answer regions were found from the blank/key difference.',
+    continueStudents: 'Load student scans →',
+    studentsTitle: 'Load student papers',
+    studentsHelp: 'Choose the student papers separately. One student sheet per page.',
+    studentScan: 'Student scan stack',
+    studentScanHelp: 'Every page is automatically aligned to the blank test before grading.',
+    chooseStudentScans: 'Choose student PDF / images',
+    aligningStudent: 'Aligning student page {page} of {total}…',
+    alignmentSummary: '{good}/{total} pages aligned automatically; {review} need review',
+    alignmentNeedsReview: 'Review page alignment',
+    reviewAlignment: 'Review alignment',
+    alignmentReviewTitle: 'Review page alignment',
+    overlayOpacity: 'Student overlay opacity',
+    acceptAlignment: 'Accept this alignment',
+    close: 'Close',
+    blankBadge: 'Blank test',
+    alignedKeyBadge: 'Aligned key',
+    usingFirstPage: 'This file has multiple pages. Only page 1 is used here.',
     scan: 'Scan',
     answerAreas: 'Answer areas',
     grade: 'Grade',
@@ -1112,14 +1592,16 @@ return { dictionaries, getLanguage, setLanguage, t, applyI18n };
 })();
 
 // app.js
-const offlineModule4 = (() => {
+const offlineModule5 = (() => {
 const { ANSWER_TYPES, hasGrader, runGrader } = offlineModule0;
 const { detectRedRegions, sortReadingOrder, DEFAULT_RED_OPTIONS } = offlineModule1;
-const { applyI18n, getLanguage, setLanguage, t } = offlineModule3;
+const { detectDifferenceRegions, estimateAlignment, forwardCanvasTransform, inverseCanvasTransform, DEFAULT_ALIGNMENT_OPTIONS } = offlineModule2;
+const { applyI18n, getLanguage, setLanguage, t } = offlineModule4;
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const STORAGE_KEY = 'papergrader-session-v2';
+const STORAGE_KEY = 'papergrader-session-v3';
+const ALIGNMENT_REVIEW_THRESHOLD = DEFAULT_ALIGNMENT_OPTIONS.reviewThreshold;
 const PAPER_MM = { A4: [210, 297], B5: [182, 257], B4: [257, 364], A3: [297, 420], LETTER: [215.9, 279.4] };
 const TYPE_ICONS = { written: 'Aa', number: '12', circle: '○', matching: '↔', checkbox: '☑', short: '✎' };
 const detectionCache = new WeakMap();
@@ -1127,8 +1609,15 @@ const keyCropCache = new WeakMap();
 const isProposal = (question) => question.origin === 'auto' && !question.confirmed;
 
 const state = {
+  blankPage: null,
+  keyPage: null,
+  alignedKeyPage: null,
+  setupFiles: { blank: null, key: null },
+  setupAlignment: null,
   allPages: [],
   files: [],
+  studentFingerprint: null,
+  restoredSession: null,
   questions: [],
   nameBox: null,
   scoreBox: null,
@@ -1143,10 +1632,12 @@ const state = {
   tool: 'question',
   filter: 'all',
   pdfjs: null,
+  lastDetection: null,
 };
 
-const studentPages = () => ($('#keyFirst').checked ? state.allPages.slice(1) : state.allPages);
-const setupPage = () => state.allPages[0];
+const studentPages = () => state.allPages;
+const setupPage = () => state.alignedKeyPage || state.keyPage;
+const templatePage = () => state.blankPage;
 
 function currentSettings() {
   return {
@@ -1174,20 +1665,39 @@ function getSavedSession() {
   }
 }
 
+function fileIdentity(file) {
+  return file ? [file.name, file.size, file.lastModified || 0] : null;
+}
+
+function setupFingerprint() {
+  return JSON.stringify({
+    blank: fileIdentity(state.setupFiles.blank),
+    key: fileIdentity(state.setupFiles.key),
+  });
+}
+
+function makeStudentFingerprint() {
+  return JSON.stringify({
+    files: state.files.map(fileIdentity),
+    pages: state.allPages.length,
+  });
+}
+
 function saveSession() {
   if (!state.fingerprint) return;
   try {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        fingerprint: state.fingerprint,
+        setupFingerprint: state.fingerprint,
+        studentFingerprint: state.studentFingerprint,
         pageCount: studentPages().length,
-        keyFirst: $('#keyFirst').checked,
         questions: state.questions,
         nameBox: state.nameBox,
         scoreBox: state.scoreBox,
         grades: state.grades,
         names: state.names,
+        alignmentAccepted: studentPages().map((page) => Boolean(page.alignmentAccepted)),
         settings: currentSettings(),
       }),
     );
@@ -1195,9 +1705,10 @@ function saveSession() {
   } catch (_) {}
 }
 
-function restoreSession(fingerprint) {
+function restoreSetupSession(fingerprint) {
   const saved = getSavedSession();
-  if (!saved || saved.fingerprint !== fingerprint) return false;
+  state.restoredSession = saved;
+  if (!saved || saved.setupFingerprint !== fingerprint) return false;
   state.questions = Array.isArray(saved.questions) ? saved.questions : [];
   state.nameBox = saved.nameBox || null;
   state.scoreBox = saved.scoreBox || null;
@@ -1205,36 +1716,41 @@ function restoreSession(fingerprint) {
     if (!question.origin) question.origin = 'manual';
     if (question.confirmed === undefined) question.confirmed = true;
   });
+  applySettings(saved.settings);
+  return true;
+}
+
+function restoreStudentSession() {
+  const saved = state.restoredSession || getSavedSession();
+  if (!saved || !state.studentFingerprint || saved.studentFingerprint !== state.studentFingerprint) {
+    state.grades = {};
+    state.names = studentPages().map((_, index) => t('studentDefault', { number: index + 1 }));
+    return false;
+  }
   state.grades = saved.grades && typeof saved.grades === 'object' ? saved.grades : {};
   state.names = studentPages().map(
     (_, index) => saved.names?.[index] || t('studentDefault', { number: index + 1 }),
   );
-  applySettings(saved.settings);
+  studentPages().forEach((page, index) => {
+    page.alignmentAccepted = Boolean(saved.alignmentAccepted?.[index]);
+  });
   return true;
 }
 
 function renderSavedBanner() {
   const banner = $('#savedSessionBanner');
   const saved = getSavedSession();
-  if (!saved?.pageCount) {
+  if (!saved?.setupFingerprint) {
     banner.classList.add('hidden');
     return;
   }
-  banner.textContent = t('savedSession', { count: saved.pageCount });
+  banner.textContent = t('savedSession', { count: saved.pageCount || 0 });
   banner.classList.remove('hidden');
 }
 
 applySettings(getSavedSession()?.settings);
 applyI18n();
 renderSavedBanner();
-
-function scanFingerprint() {
-  return JSON.stringify({
-    files: state.files.map((file) => [file.name, file.size]),
-    pages: state.allPages.length,
-    keyFirst: $('#keyFirst').checked,
-  });
-}
 
 function toast(message) {
   const el = $('#toast');
@@ -1257,6 +1773,7 @@ function switchStep(id) {
     renderQuestionList();
     renderSetupCanvas();
   }
+  if (id === 'students') renderStudentThumbs();
   if (id === 'grade') {
     initGradeData();
     renderGradeView();
@@ -1276,7 +1793,8 @@ $('#languageToggle').addEventListener('click', () => {
   setLanguage(getLanguage() === 'ja' ? 'en' : 'ja');
   applyI18n();
   renderSavedBanner();
-  renderThumbs();
+  renderSetupThumbs();
+  renderStudentThumbs();
   renderQuestionList();
   renderSetupCanvas();
   updateToolButtons();
@@ -1300,64 +1818,35 @@ async function ensurePdfJs() {
   return mod;
 }
 
-$('#fileInput').addEventListener('change', async (event) => {
-  const files = [...event.target.files].sort((a, b) =>
-    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
-  );
-  if (!files.length) return;
-  resetScanState();
-  state.files = files;
-  $('#loadStatus').textContent = t('loading');
-  try {
-    for (const file of files) {
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) await loadPdf(file);
-      else if (file.type.startsWith('image/')) await loadImage(file);
-    }
-    if (!state.allPages.length || ($('#keyFirst').checked && state.allPages.length < 2))
-      throw new Error(t('noReadable'));
-    state.fingerprint = scanFingerprint();
-    state.names = studentPages().map((_, index) => t('studentDefault', { number: index + 1 }));
-    const restored = restoreSession(state.fingerprint);
-    $('#loadStatus').textContent = '';
-    $('#pageCountText').textContent = t('pagesReady', { count: studentPages().length });
-    $('#pagePreviewWrap').classList.remove('hidden');
-    renderThumbs();
-    enableStep('areas');
-    $('#continueToAreas').disabled = false;
-    updateSetupReady();
-    if (restored) toast(t('restored'));
-    if ($('#keyFirst').checked && !state.questions.length) detectAnswers();
-  } catch (error) {
-    console.error(error);
-    $('#loadStatus').textContent = error.message || t('loadFailed');
-    toast(t('loadFailed'));
-  }
-});
-
-function resetScanState() {
-  state.allPages = [];
-  state.files = [];
+function resetDerivedForSetupChange() {
+  state.alignedKeyPage = null;
+  state.setupAlignment = null;
   state.questions = [];
   state.nameBox = null;
   state.scoreBox = null;
   state.selectedAreas.clear();
   state.grades = {};
   state.names = [];
+  state.allPages = [];
+  state.files = [];
+  state.studentFingerprint = null;
+  state.restoredSession = null;
   state.fingerprint = null;
-  state.activeQuestion = 0;
-  state.selectedStudent = 0;
-  state.selectedArea = null;
-  state.interaction = null;
-  ['areas', 'grade', 'results', 'print'].forEach((id) => enableStep(id, false));
+  state.lastDetection = null;
+  ['areas', 'students', 'grade', 'results', 'print'].forEach((id) => enableStep(id, false));
+  $('#continueToAreas').disabled = true;
+  $('#continueToStudents').disabled = true;
   $('#continueToGrade').disabled = true;
-  $('#pagePreviewWrap').classList.add('hidden');
+  $('#setupPreviewWrap').classList.add('hidden');
+  $('#studentPreviewWrap').classList.add('hidden');
 }
 
-async function loadPdf(file) {
+async function loadPdfPages(file, statusElement) {
   const pdfjs = await ensurePdfJs();
   const pdf = await pdfjs.getDocument({ data: new Uint8Array(await file.arrayBuffer()) }).promise;
+  const pages = [];
   for (let number = 1; number <= pdf.numPages; number++) {
-    $('#loadStatus').textContent = t('renderingPdf', { page: number, total: pdf.numPages });
+    if (statusElement) statusElement.textContent = t('renderingPdf', { page: number, total: pdf.numPages });
     const page = await pdf.getPage(number);
     const base = page.getViewport({ scale: 1 });
     const scale = Math.min(2.2, Math.max(1.15, 1900 / Math.max(base.width, base.height)));
@@ -1369,16 +1858,12 @@ async function loadPdf(file) {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     await page.render({ canvasContext: ctx, viewport }).promise;
-    state.allPages.push({
-      canvas,
-      width: canvas.width,
-      height: canvas.height,
-      source: `${file.name} · page ${number}`,
-    });
+    pages.push({ canvas, width: canvas.width, height: canvas.height, source: file.name + ' · page ' + number });
   }
+  return pages;
 }
 
-async function loadImage(file) {
+async function loadImagePage(file) {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, 1900 / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');
@@ -1389,73 +1874,273 @@ async function loadImage(file) {
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
   bitmap.close();
-  state.allPages.push({ canvas, width: canvas.width, height: canvas.height, source: file.name });
+  return { canvas, width: canvas.width, height: canvas.height, source: file.name };
 }
 
-$('#keyFirst').addEventListener('change', () => {
-  if (!state.allPages.length) return;
-  state.questions = [];
-  state.nameBox = null;
-  state.scoreBox = null;
-  state.selectedAreas.clear();
-  state.grades = {};
-  state.selectedArea = null;
-  state.fingerprint = scanFingerprint();
-  state.names = studentPages().map((_, index) => t('studentDefault', { number: index + 1 }));
-  const restored = restoreSession(state.fingerprint);
-  $('#pageCountText').textContent = t('pagesReady', { count: studentPages().length });
-  renderThumbs();
+async function loadFiles(files, statusElement) {
+  const pages = [];
+  for (const file of files) {
+    if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf'))
+      pages.push(...await loadPdfPages(file, statusElement));
+    else if (file.type.startsWith('image/'))
+      pages.push(await loadImagePage(file));
+  }
+  return pages;
+}
+
+function imageDataForAlignment(canvas, maxWidth = 850) {
+  const width = Math.min(maxWidth, canvas.width);
+  const height = Math.max(1, Math.round(canvas.height * width / canvas.width));
+  const work = document.createElement('canvas');
+  work.width = width;
+  work.height = height;
+  const ctx = work.getContext('2d', { alpha: false, willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(canvas, 0, 0, width, height);
+  return ctx.getImageData(0, 0, width, height);
+}
+
+function alignPageToTemplate(page) {
+  const reference = templatePage();
+  if (!reference || !page) return null;
+  const alignment = estimateAlignment(
+    imageDataForAlignment(reference.canvas),
+    imageDataForAlignment(page.canvas),
+  );
+  const normalized = document.createElement('canvas');
+  normalized.width = reference.width;
+  normalized.height = reference.height;
+  const normalizedCtx = normalized.getContext('2d', { alpha: false });
+  normalizedCtx.fillStyle = '#fff';
+  normalizedCtx.fillRect(0, 0, normalized.width, normalized.height);
+  normalizedCtx.drawImage(page.canvas, 0, 0, normalized.width, normalized.height);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = reference.width;
+  canvas.height = reference.height;
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const m = inverseCanvasTransform(alignment, canvas.width, canvas.height);
+  ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+  ctx.drawImage(normalized, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  return {
+    canvas,
+    width: canvas.width,
+    height: canvas.height,
+    source: page.source,
+    rawCanvas: page.canvas,
+    alignment,
+    alignmentAccepted: false,
+  };
+}
+
+function alignmentPercent(page) {
+  return Math.round((page?.alignment?.confidence || 0) * 100);
+}
+
+function alignmentTrusted(page) {
+  return Boolean(page?.alignmentAccepted || (page?.alignment?.confidence ?? 0) >= ALIGNMENT_REVIEW_THRESHOLD);
+}
+
+async function loadSetupRole(role, file) {
+  const status = $('#' + role + 'Status');
+  status.textContent = t('loading');
+  try {
+    const pages = await loadFiles([file], status);
+    if (!pages.length) throw new Error(t('noReadable'));
+    resetDerivedForSetupChange();
+    state.setupFiles[role] = file;
+    state[role === 'blank' ? 'blankPage' : 'keyPage'] = pages[0];
+    if (pages.length > 1) toast(t('usingFirstPage'));
+    status.textContent = pages[0].source;
+    await prepareSetup();
+  } catch (error) {
+    console.error(error);
+    status.textContent = error.message || t('loadFailed');
+  }
+}
+
+async function prepareSetup() {
+  if (!state.blankPage || !state.keyPage) return;
+  $('#setupPreviewWrap').classList.remove('hidden');
+  $('#setupStatus').textContent = t('aligningKey');
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+  state.alignedKeyPage = alignPageToTemplate(state.keyPage);
+  state.setupAlignment = state.alignedKeyPage.alignment;
+  state.fingerprint = setupFingerprint();
+  const restored = restoreSetupSession(state.fingerprint);
+  $('#setupStatus').textContent = t('setupReady');
+  const percent = alignmentPercent(state.alignedKeyPage);
+  $('#alignmentStatus').textContent = t(
+    alignmentTrusted(state.alignedKeyPage) ? 'alignmentGood' : 'alignmentLow',
+    { percent },
+  );
+  renderSetupThumbs();
+  enableStep('areas');
+  $('#continueToAreas').disabled = false;
+  if (!restored && !state.questions.length) detectDifferenceAnswers();
+  else {
+    renderDetectionStatus();
+    toast(t('restored'));
+  }
   updateSetupReady();
-  saveSession();
-  if (restored) toast(t('restored'));
-  if ($('#keyFirst').checked && !state.questions.length && !detectionCache.has(setupPage())) detectAnswers();
+}
+
+$('#blankInput').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (file) loadSetupRole('blank', file);
 });
 
-function renderThumbs() {
-  const canDetect = $('#keyFirst').checked && state.allPages.length > 0;
-  $('#detectRedScan').classList.toggle('hidden', !canDetect);
-  $('#detectRedAreas').classList.toggle('hidden', !canDetect);
-  renderDetectionStatus();
-  if (!state.allPages.length) return;
-  const wrap = $('#pageThumbs');
-  wrap.innerHTML = '';
-  state.allPages.slice(0, 24).forEach((page, index) => {
-    const isKey = $('#keyFirst').checked && index === 0;
-    const item = document.createElement('div');
-    item.className = `thumb ${isKey ? 'key' : ''}`;
-    const canvas = document.createElement('canvas');
-    canvas.width = 180;
-    canvas.height = Math.round((180 * page.height) / page.width);
-    canvas.getContext('2d').drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
-    const label = document.createElement('div');
-    label.className = 'thumb-label';
-    label.textContent = isKey
-      ? t('keyBadge')
-      : t('studentBadge', { number: index + ($('#keyFirst').checked ? 0 : 1) });
-    item.append(canvas, label);
-    if (isKey) {
-      const badge = document.createElement('span');
-      badge.className = 'thumb-badge';
-      badge.textContent = t('keyBadge');
-      item.append(badge);
-    }
-    wrap.append(item);
-  });
+$('#keyInput').addEventListener('change', (event) => {
+  const file = event.target.files?.[0];
+  if (file) loadSetupRole('key', file);
+});
+
+function thumbCanvas(page) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 180;
+  canvas.height = Math.round(180 * page.height / page.width);
+  canvas.getContext('2d').drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
+  return canvas;
 }
 
-$('#continueToAreas').addEventListener('click', () => switchStep('areas'));
+function appendThumb(wrap, page, labelText, badgeText, className = '') {
+  const item = document.createElement('div');
+  item.className = 'thumb ' + className;
+  item.append(thumbCanvas(page));
+  const label = document.createElement('div');
+  label.className = 'thumb-label';
+  label.textContent = labelText;
+  item.append(label);
+  if (badgeText) {
+    const badge = document.createElement('span');
+    badge.className = 'thumb-badge';
+    badge.textContent = badgeText;
+    item.append(badge);
+  }
+  wrap.append(item);
+  return item;
+}
+
+function renderSetupThumbs() {
+  const wrap = $('#setupThumbs');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  if (state.blankPage) appendThumb(wrap, state.blankPage, t('blankTest'), t('blankBadge'));
+  if (state.keyPage) appendThumb(wrap, state.keyPage, t('answerKey'), t('keyBadge'), 'key');
+  if (state.alignedKeyPage)
+    appendThumb(wrap, state.alignedKeyPage, t('alignedKeyBadge'), alignmentPercent(state.alignedKeyPage) + '%', 'key');
+  renderDetectionStatus();
+}
+
+function getDetectionCache(page) {
+  let entry = detectionCache.get(page);
+  if (!entry) {
+    entry = {};
+    detectionCache.set(page, entry);
+  }
+  return entry;
+}
+
+function applyDetectedRegions(result, detector) {
+  state.lastDetection = { detector, result };
+  const removed = state.questions.filter(isProposal);
+  const kept = state.questions.filter((question) => !isProposal(question));
+  removed.forEach((question) => {
+    Object.values(state.grades).forEach((grades) => delete grades[question.id]);
+  });
+  const overlap = (a, b) => {
+    const intersection = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
+      * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+    return Math.max(
+      intersection / Math.max(1e-8, a.w * a.h + b.w * b.h - intersection),
+      intersection / Math.max(1e-8, b.w * b.h) - 0.2,
+    );
+  };
+  const lastNumber = Math.max(
+    kept.length,
+    ...kept.map((q) => Number(/^Q(\d+)$/.exec(q.label || '')?.[1]) || 0),
+  );
+  const proposals = sortReadingOrder(result.regions)
+    .filter((region) => !kept.some((q) => overlap(q, region) > 0.3))
+    .map((region, index) => ({
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-auto-' + index,
+      label: 'Q' + (lastNumber + index + 1),
+      type: region.kind === 'matching' ? 'matching' : 'written',
+      points: 1,
+      expected: '',
+      x: region.x,
+      y: region.y,
+      w: region.w,
+      h: region.h,
+      origin: 'auto',
+      detector,
+      confirmed: false,
+      detectConfidence: region.confidence,
+      uncertain: region.uncertain,
+    }));
+  state.questions = [...kept, ...proposals];
+  selectArea(null);
+  refreshAreas();
+  renderDetectionStatus();
+}
 
 function renderDetectionStatus() {
-  const result = setupPage() && detectionCache.get(setupPage());
-  $('#detectionStatus').textContent = $('#keyFirst').checked && result
-    ? t(result.regions.length ? 'detectedRegions' : 'noRedFound', { count: result.regions.length }) : '';
+  const status = $('#detectionStatus');
+  if (!status) return;
+  const last = state.lastDetection;
+  if (!last) {
+    status.textContent = '';
+    return;
+  }
+  const count = last.result.regions.length;
+  const key = count
+    ? (last.detector === 'difference' ? 'detectedChanges' : 'detectedRegions')
+    : (last.detector === 'difference' ? 'noChangesFound' : 'noRedFound');
+  status.textContent = t(key, { count });
 }
 
-function detectAnswers(force = false) {
-  const page = setupPage();
-  if (!page || !$('#keyFirst').checked) return;
+function detectDifferenceAnswers(force = false) {
+  const key = setupPage();
+  const blank = templatePage();
+  if (!key || !blank) return;
   try {
-    let result = force ? null : detectionCache.get(page);
+    const cache = getDetectionCache(key);
+    let result = force ? null : cache.difference;
+    if (!result) {
+      const width = Math.min(1100, blank.width);
+      const height = Math.round(blank.height * width / blank.width);
+      const get = (page) => {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(page.canvas, 0, 0, width, height);
+        return ctx.getImageData(0, 0, width, height);
+      };
+      result = detectDifferenceRegions(get(blank), get(key));
+      cache.difference = result;
+    }
+    applyDetectedRegions(result, 'difference');
+    toast(t(result.regions.length ? 'detectedChanges' : 'noChangesFound', { count: result.regions.length }));
+  } catch (error) {
+    console.error(error);
+    toast(t('detectionFailed'));
+  }
+}
+
+function detectRedAnswers(force = false) {
+  const page = setupPage();
+  if (!page) return;
+  try {
+    const cache = getDetectionCache(page);
+    let result = force ? null : cache.red;
     if (!result) {
       const canvas = document.createElement('canvas');
       canvas.width = Math.min(DEFAULT_RED_OPTIONS.workingWidth, page.width);
@@ -1463,32 +2148,9 @@ function detectAnswers(force = false) {
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
       ctx.drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
       result = detectRedRegions(ctx.getImageData(0, 0, canvas.width, canvas.height));
-      detectionCache.set(page, result);
+      cache.red = result;
     }
-    const removed = state.questions.filter(isProposal);
-    const kept = state.questions.filter((question) => !isProposal(question));
-    removed.forEach((question) => {
-      Object.values(state.grades).forEach((grades) => delete grades[question.id]);
-    });
-    const overlap = (a, b) => {
-      const intersection = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
-        * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
-      // IoU, or containment so parts of a merged/enlarged box are not proposed again.
-      return Math.max(intersection / (a.w * a.h + b.w * b.h - intersection), intersection / (b.w * b.h) - 0.2);
-    };
-    // Continue after the highest kept Qn so a rerun never duplicates a label.
-    const lastNumber = Math.max(kept.length, ...kept.map((q) => Number(/^Q(\d+)$/.exec(q.label || '')?.[1]) || 0));
-    const proposals = sortReadingOrder(result.regions).filter((region) => !kept.some((q) => overlap(q, region) > 0.3))
-      .map((region, index) => ({
-        id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-auto-${index}`,
-        label: `Q${lastNumber + index + 1}`, type: region.kind === 'matching' ? 'matching' : 'written',
-        points: 1, expected: '', x: region.x, y: region.y, w: region.w, h: region.h,
-        origin: 'auto', confirmed: false, detectConfidence: region.confidence, uncertain: region.uncertain,
-      }));
-    state.questions = [...kept, ...proposals];
-    selectArea(null);
-    refreshAreas();
-    renderDetectionStatus();
+    applyDetectedRegions(result, 'red');
     toast(t(result.regions.length ? 'detectedRegions' : 'noRedFound', { count: result.regions.length }));
   } catch (error) {
     console.error(error);
@@ -1496,8 +2158,16 @@ function detectAnswers(force = false) {
   }
 }
 
+$('#detectChangesScan').addEventListener('click', () => detectDifferenceAnswers(true));
+$('#detectChangesAreas').addEventListener('click', () => detectDifferenceAnswers(true));
+$('#detectRedScan').addEventListener('click', () => detectRedAnswers(true));
+$('#detectRedAreas').addEventListener('click', () => detectRedAnswers(true));
+$('#continueToAreas').addEventListener('click', () => switchStep('areas'));
+
 function confirmProposals() {
-  state.questions.forEach((question) => { if (isProposal(question)) question.confirmed = true; });
+  state.questions.forEach((question) => {
+    if (isProposal(question)) question.confirmed = true;
+  });
   refreshAreas();
 }
 
@@ -1509,27 +2179,145 @@ function acceptProposals() {
   return true;
 }
 
-$('#detectRedScan').addEventListener('click', () => detectAnswers(true));
-$('#detectRedAreas').addEventListener('click', () => detectAnswers(true));
 $('#confirmAll').addEventListener('click', confirmProposals);
+
 $('#renumberAreas').addEventListener('click', () => {
   state.questions = sortReadingOrder(state.questions);
-  // Relabelling is not verification, so proposals stay unconfirmed.
-  state.questions.forEach((question, index) => { question.label = `Q${index + 1}`; });
+  state.questions.forEach((question, index) => {
+    question.label = 'Q' + (index + 1);
+  });
   refreshAreas();
 });
+
 $('#mergeAreas').addEventListener('click', () => {
   const selected = sortReadingOrder(state.questions.filter((q) => state.selectedAreas.has(q.id)));
   if (selected.length < 2) return;
   const first = selected[0];
-  const x = Math.min(...selected.map((q) => q.x)), y = Math.min(...selected.map((q) => q.y));
-  const right = Math.max(...selected.map((q) => q.x + q.w)), bottom = Math.max(...selected.map((q) => q.y + q.h));
+  const x = Math.min(...selected.map((q) => q.x));
+  const y = Math.min(...selected.map((q) => q.y));
+  const right = Math.max(...selected.map((q) => q.x + q.w));
+  const bottom = Math.max(...selected.map((q) => q.y + q.h));
   const removed = new Set(selected.slice(1).map((q) => q.id));
   state.questions = state.questions.filter((q) => !removed.has(q.id));
   Object.values(state.grades).forEach((grades) => removed.forEach((id) => delete grades[id]));
   Object.assign(first, { x, y, w: right - x, h: bottom - y, confirmed: true });
   selectArea(first.id);
   refreshAreas();
+});
+
+async function loadStudents(files) {
+  $('#studentLoadStatus').textContent = t('loading');
+  const rawPages = await loadFiles(files, $('#studentLoadStatus'));
+  if (!rawPages.length) throw new Error(t('noReadable'));
+  state.files = files;
+  state.allPages = [];
+  for (let index = 0; index < rawPages.length; index++) {
+    $('#studentLoadStatus').textContent = t('aligningStudent', { page: index + 1, total: rawPages.length });
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    state.allPages.push(alignPageToTemplate(rawPages[index]));
+  }
+  state.studentFingerprint = makeStudentFingerprint();
+  restoreStudentSession();
+  $('#studentLoadStatus').textContent = t('pagesReady', { count: state.allPages.length });
+  $('#studentPreviewWrap').classList.remove('hidden');
+  renderStudentThumbs();
+  updateSetupReady();
+  saveSession();
+}
+
+$('#studentInput').addEventListener('change', async (event) => {
+  const files = [...event.target.files].sort((a, b) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }),
+  );
+  if (!files.length) return;
+  try {
+    await loadStudents(files);
+  } catch (error) {
+    console.error(error);
+    $('#studentLoadStatus').textContent = error.message || t('loadFailed');
+  }
+});
+
+function renderStudentThumbs() {
+  const wrap = $('#studentThumbs');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const pages = studentPages();
+  if (!pages.length) return;
+  let good = 0;
+  pages.slice(0, 60).forEach((page, index) => {
+    const trusted = alignmentTrusted(page);
+    if (trusted) good++;
+    const item = appendThumb(
+      wrap,
+      page,
+      t('studentBadge', { number: index + 1 }),
+      null,
+      trusted ? '' : 'alignment-review',
+    );
+    const meta = document.createElement('div');
+    meta.className = 'alignment-meta';
+    const score = document.createElement('span');
+    score.className = 'alignment-score ' + (trusted ? 'good' : 'review');
+    score.textContent = alignmentPercent(page) + '%';
+    meta.append(score);
+    if (!trusted) {
+      const review = document.createElement('button');
+      review.className = 'ghost';
+      review.textContent = t('reviewAlignment');
+      review.onclick = () => openAlignmentReview(index);
+      meta.append(review);
+    }
+    item.append(meta);
+  });
+  $('#studentPageCountText').textContent = t('pagesReady', { count: pages.length });
+  $('#studentAlignmentSummary').textContent = t('alignmentSummary', {
+    good,
+    total: pages.length,
+    review: pages.length - good,
+  });
+}
+
+let alignmentReviewIndex = null;
+
+function drawAlignmentOverlay() {
+  if (alignmentReviewIndex == null) return;
+  const page = studentPages()[alignmentReviewIndex];
+  const blank = templatePage();
+  if (!page || !blank) return;
+  const canvas = $('#alignmentOverlayCanvas');
+  const maxW = 820;
+  canvas.width = Math.min(maxW, blank.width);
+  canvas.height = Math.round(blank.height * canvas.width / blank.width);
+  const ctx = canvas.getContext('2d', { alpha: false });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1;
+  ctx.drawImage(blank.canvas, 0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = Number($('#alignmentOpacity').value) || 0.5;
+  ctx.drawImage(page.canvas, 0, 0, canvas.width, canvas.height);
+  ctx.globalAlpha = 1;
+}
+
+function openAlignmentReview(index) {
+  alignmentReviewIndex = index;
+  const page = studentPages()[index];
+  $('#alignmentDialogStatus').textContent = t(
+    alignmentTrusted(page) ? 'alignmentGood' : 'alignmentLow',
+    { percent: alignmentPercent(page) },
+  );
+  drawAlignmentOverlay();
+  $('#alignmentDialog').showModal();
+}
+
+$('#alignmentOpacity').addEventListener('input', drawAlignmentOverlay);
+$('#closeAlignmentDialog').addEventListener('click', () => $('#alignmentDialog').close());
+$('#acceptAlignment').addEventListener('click', () => {
+  const page = studentPages()[alignmentReviewIndex];
+  if (page) page.alignmentAccepted = true;
+  $('#alignmentDialog').close();
+  renderStudentThumbs();
+  saveSession();
 });
 
 function renderSetupCanvas(tempRect = null) {
@@ -1930,10 +2718,16 @@ function escapeHtml(value = '') {
   );
 }
 function updateSetupReady() {
-  const ready = state.questions.length > 0 && studentPages().length > 0;
-  $('#continueToGrade').disabled = !ready;
-  enableStep('grade', ready);
-  if (!ready) {
+  const setupReady = Boolean(setupPage() && templatePage());
+  const areasReady = setupReady && state.questions.length > 0;
+  const gradeReady = areasReady && studentPages().length > 0;
+  $('#continueToAreas').disabled = !setupReady;
+  $('#continueToStudents').disabled = !areasReady;
+  $('#continueToGrade').disabled = !gradeReady;
+  enableStep('areas', setupReady);
+  enableStep('students', areasReady);
+  enableStep('grade', gradeReady);
+  if (!gradeReady) {
     enableStep('results', false);
     enableStep('print', false);
   }
@@ -1951,6 +2745,10 @@ $('#clearAreas').addEventListener('click', () => {
   renderSetupCanvas();
   updateSetupReady();
   saveSession();
+});
+$('#continueToStudents').addEventListener('click', () => {
+  if (!acceptProposals()) return;
+  switchStep('students');
 });
 $('#continueToGrade').addEventListener('click', () => {
   state.activeQuestion = 0;
@@ -2166,8 +2964,8 @@ function makeStudentCard(page, index, question, grade) {
     });
     buttons.append(button);
   });
-  if (grade.source === 'auto' && (grade.confidence !== undefined || grade.reading !== undefined))
-    note.innerHTML = `<span class="auto-tag">${escapeHtml(t('auto'))}</span>${escapeHtml(grade.reading || '')}`;
+  if (grade.source === 'auto' && (grade.confidence !== undefined || grade.reading !== undefined || grade.note))
+    note.innerHTML = `<span class="auto-tag">${escapeHtml(t('auto'))}</span>${escapeHtml(grade.note || grade.reading || '')}`;
   else note.innerHTML = '';
   card.append(top, crop, note, buttons);
   card.addEventListener('click', (event) => {
@@ -2264,20 +3062,35 @@ $('#autoGrade').addEventListener('click', async () => {
   button.textContent = t('autoRunning');
   const cropSize = question.type === 'matching' ? [1100, 1100] : [];
   const keyCrop = makeCropCanvas(setupPage().canvas, question, ...cropSize);
+  const templateImage = templatePage() ? makeCropCanvas(templatePage().canvas, question, ...cropSize) : null;
   try {
     for (let index = 0; index < studentPages().length; index++) {
       const record = state.grades[index][question.id];
       if (record.source === 'teacher') continue;
-      const studentCrop = makeCropCanvas(studentPages()[index].canvas, question, ...cropSize);
+      const page = studentPages()[index];
+      if (!alignmentTrusted(page)) {
+        Object.assign(record, {
+          status: null,
+          source: 'auto',
+          flagged: true,
+          note: t('alignmentNeedsReview'),
+          alignmentConfidence: page.alignment?.confidence ?? 0,
+        });
+        continue;
+      }
+      const studentCrop = makeCropCanvas(page.canvas, question, ...cropSize);
       const result = await runGrader(question.type, {
         question,
         expected: question.expected,
         keyCrop,
         studentCrop,
+        templateImage,
       });
       if (record.source === 'teacher') continue;
       delete record.credit;
       delete record.detail;
+      delete record.note;
+      delete record.alignmentConfidence;
       if (question.type === 'matching' && result) {
         record.credit = Number.isFinite(result.credit) ? Math.max(0, Math.min(1, result.credit)) : null;
         record.detail = Object.fromEntries(
@@ -2536,6 +3349,9 @@ function makeOverlayCanvas(pi, calibration = false) {
   c.height = base.height;
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, c.width, c.height);
+  // Areas live in template coordinates; map them back onto the physical sheet as scanned.
+  const m = forwardCanvasTransform(base.alignment, c.width, c.height);
+  ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
   ctx.strokeStyle = '#d00000';
   ctx.fillStyle = '#d00000';
   ctx.lineWidth = Math.max(3, c.width * 0.0025);

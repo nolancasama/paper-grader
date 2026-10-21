@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { detectDifferenceRegions, estimateAlignment } from '../alignment.js';
+import { detectDifferenceRegions, estimateAlignment, forwardCanvasTransform, inverseCanvasTransform } from '../alignment.js';
 
 function image(width, height, fill = 255) {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -71,4 +71,15 @@ test('identical blank and key create no answer proposals', () => {
   const result = detectDifferenceRegions(blank, key);
   assert.equal(result.differencePixelCount, 0);
   assert.equal(result.regions.length, 0);
+});
+
+test('forward and inverse canvas transforms are exact inverses', () => {
+  const alignment = { angleDeg: 1.5, scale: 1.012, dx: 0.02, dy: -0.015 };
+  const f = forwardCanvasTransform(alignment, 800, 1100);
+  const i = inverseCanvasTransform(alignment, 800, 1100);
+  const apply = (m, [x, y]) => [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
+  for (const point of [[0, 0], [400, 550], [790, 20], [100, 1000]]) {
+    const back = apply(i, apply(f, point));
+    assert.ok(Math.abs(back[0] - point[0]) < 1e-6 && Math.abs(back[1] - point[1]) < 1e-6);
+  }
 });
