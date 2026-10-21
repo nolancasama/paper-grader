@@ -1,11 +1,13 @@
 import { ANSWER_TYPES, hasGrader, runGrader } from './graders.js';
 import { detectRedRegions, sortReadingOrder, DEFAULT_RED_OPTIONS } from './redDetect.js';
+import { detectDifferenceRegions, estimateAlignment, inverseCanvasTransform, DEFAULT_ALIGNMENT_OPTIONS } from './alignment.js';
 import { applyI18n, getLanguage, setLanguage, t } from './i18n.js';
 import './graders/matching.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
-const STORAGE_KEY = 'papergrader-session-v2';
+const STORAGE_KEY = 'papergrader-session-v3';
+const ALIGNMENT_REVIEW_THRESHOLD = DEFAULT_ALIGNMENT_OPTIONS.reviewThreshold;
 const PAPER_MM = { A4: [210, 297], B5: [182, 257], B4: [257, 364], A3: [297, 420], LETTER: [215.9, 279.4] };
 const TYPE_ICONS = { written: 'Aa', number: '12', circle: '○', matching: '↔', checkbox: '☑', short: '✎' };
 const detectionCache = new WeakMap();
@@ -13,8 +15,15 @@ const keyCropCache = new WeakMap();
 const isProposal = (question) => question.origin === 'auto' && !question.confirmed;
 
 const state = {
+  blankPage: null,
+  keyPage: null,
+  alignedKeyPage: null,
+  setupFiles: { blank: null, key: null },
+  setupAlignment: null,
   allPages: [],
   files: [],
+  studentFingerprint: null,
+  restoredSession: null,
   questions: [],
   nameBox: null,
   scoreBox: null,
@@ -29,10 +38,12 @@ const state = {
   tool: 'question',
   filter: 'all',
   pdfjs: null,
+  lastDetection: null,
 };
 
-const studentPages = () => ($('#keyFirst').checked ? state.allPages.slice(1) : state.allPages);
-const setupPage = () => state.allPages[0];
+const studentPages = () => state.allPages;
+const setupPage = () => state.alignedKeyPage || state.keyPage;
+const templatePage = () => state.blankPage;
 
 function currentSettings() {
   return {
@@ -60,20 +71,39 @@ function getSavedSession() {
   }
 }
 
+function fileIdentity(file) {
+  return file ? [file.name, file.size, file.lastModified || 0] : null;
+}
+
+function setupFingerprint() {
+  return JSON.stringify({
+    blank: fileIdentity(state.setupFiles.blank),
+    key: fileIdentity(state.setupFiles.key),
+  });
+}
+
+function makeStudentFingerprint() {
+  return JSON.stringify({
+    files: state.files.map(fileIdentity),
+    pages: state.allPages.length,
+  });
+}
+
 function saveSession() {
   if (!state.fingerprint) return;
   try {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
-        fingerprint: state.fingerprint,
+        setupFingerprint: state.fingerprint,
+        studentFingerprint: state.studentFingerprint,
         pageCount: studentPages().length,
-        keyFirst: $('#keyFirst').checked,
         questions: state.questions,
         nameBox: state.nameBox,
         scoreBox: state.scoreBox,
         grades: state.grades,
         names: state.names,
+        alignmentAccepted: studentPages().map((page) => Boolean(page.alignmentAccepted)),
         settings: currentSettings(),
       }),
     );
@@ -81,9 +111,10 @@ function saveSession() {
   } catch (_) {}
 }
 
-function restoreSession(fingerprint) {
+function restoreSetupSession(fingerprint) {
   const saved = getSavedSession();
-  if (!saved || saved.fingerprint !== fingerprint) return false;
+  state.restoredSession = saved;
+  if (!saved || saved.setupFingerprint !== fingerprint) return false;
   state.questions = Array.isArray(saved.questions) ? saved.questions : [];
   state.nameBox = saved.nameBox || null;
   state.scoreBox = saved.scoreBox || null;
@@ -91,36 +122,41 @@ function restoreSession(fingerprint) {
     if (!question.origin) question.origin = 'manual';
     if (question.confirmed === undefined) question.confirmed = true;
   });
+  applySettings(saved.settings);
+  return true;
+}
+
+function restoreStudentSession() {
+  const saved = state.restoredSession || getSavedSession();
+  if (!saved || !state.studentFingerprint || saved.studentFingerprint !== state.studentFingerprint) {
+    state.grades = {};
+    state.names = studentPages().map((_, index) => t('studentDefault', { number: index + 1 }));
+    return false;
+  }
   state.grades = saved.grades && typeof saved.grades === 'object' ? saved.grades : {};
   state.names = studentPages().map(
     (_, index) => saved.names?.[index] || t('studentDefault', { number: index + 1 }),
   );
-  applySettings(saved.settings);
+  studentPages().forEach((page, index) => {
+    page.alignmentAccepted = Boolean(saved.alignmentAccepted?.[index]);
+  });
   return true;
 }
 
 function renderSavedBanner() {
   const banner = $('#savedSessionBanner');
   const saved = getSavedSession();
-  if (!saved?.pageCount) {
+  if (!saved?.setupFingerprint) {
     banner.classList.add('hidden');
     return;
   }
-  banner.textContent = t('savedSession', { count: saved.pageCount });
+  banner.textContent = t('savedSession', { count: saved.pageCount || 0 });
   banner.classList.remove('hidden');
 }
 
 applySettings(getSavedSession()?.settings);
 applyI18n();
 renderSavedBanner();
-
-function scanFingerprint() {
-  return JSON.stringify({
-    files: state.files.map((file) => [file.name, file.size]),
-    pages: state.allPages.length,
-    keyFirst: $('#keyFirst').checked,
-  });
-}
 
 function toast(message) {
   const el = $('#toast');
@@ -143,6 +179,7 @@ function switchStep(id) {
     renderQuestionList();
     renderSetupCanvas();
   }
+  if (id === 'students') renderStudentThumbs();
   if (id === 'grade') {
     initGradeData();
     renderGradeView();
@@ -162,7 +199,8 @@ $('#languageToggle').addEventListener('click', () => {
   setLanguage(getLanguage() === 'ja' ? 'en' : 'ja');
   applyI18n();
   renderSavedBanner();
-  renderThumbs();
+  renderSetupThumbs();
+  renderStudentThumbs();
   renderQuestionList();
   renderSetupCanvas();
   updateToolButtons();
