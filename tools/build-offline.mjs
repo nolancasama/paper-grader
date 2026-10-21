@@ -70,7 +70,7 @@ for (const [name, expectedImports] of modules) {
   if (name === 'app.js') {
     source = replaceOnce(source, webPdfLoader, offlinePdfLoader, 'PDF.js loader');
     source = replaceOnce(source,
-      "if ('serviceWorker' in navigator)\n  window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));",
+      "if ('serviceWorker' in navigator)\n  window.addEventListener('load', async () => {\n    try {\n      const registration = await navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' });\n      await registration.update();\n    } catch (_) {}\n  });",
       '', 'Service-worker registration');
   }
   let imports = 0;
