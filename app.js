@@ -1374,8 +1374,8 @@ function makeStudentCard(page, index, question, grade) {
     });
     buttons.append(button);
   });
-  if (grade.source === 'auto' && (grade.confidence !== undefined || grade.reading !== undefined))
-    note.innerHTML = `<span class="auto-tag">${escapeHtml(t('auto'))}</span>${escapeHtml(grade.reading || '')}`;
+  if (grade.source === 'auto' && (grade.confidence !== undefined || grade.reading !== undefined || grade.note))
+    note.innerHTML = `<span class="auto-tag">${escapeHtml(t('auto'))}</span>${escapeHtml(grade.note || grade.reading || '')}`;
   else note.innerHTML = '';
   card.append(top, crop, note, buttons);
   card.addEventListener('click', (event) => {
@@ -1472,16 +1472,29 @@ $('#autoGrade').addEventListener('click', async () => {
   button.textContent = t('autoRunning');
   const cropSize = question.type === 'matching' ? [1100, 1100] : [];
   const keyCrop = makeCropCanvas(setupPage().canvas, question, ...cropSize);
+  const templateImage = templatePage() ? makeCropCanvas(templatePage().canvas, question, ...cropSize) : null;
   try {
     for (let index = 0; index < studentPages().length; index++) {
       const record = state.grades[index][question.id];
       if (record.source === 'teacher') continue;
-      const studentCrop = makeCropCanvas(studentPages()[index].canvas, question, ...cropSize);
+      const page = studentPages()[index];
+      if (!alignmentTrusted(page)) {
+        Object.assign(record, {
+          status: null,
+          source: 'auto',
+          flagged: true,
+          note: t('alignmentNeedsReview'),
+          alignmentConfidence: page.alignment?.confidence ?? 0,
+        });
+        continue;
+      }
+      const studentCrop = makeCropCanvas(page.canvas, question, ...cropSize);
       const result = await runGrader(question.type, {
         question,
         expected: question.expected,
         keyCrop,
         studentCrop,
+        templateImage,
       });
       if (record.source === 'teacher') continue;
       delete record.credit;
