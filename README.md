@@ -17,7 +17,7 @@ The current app already supports:
 - correction-overlay printing with paper size, X/Y offsets, reverse order, rotation, and alignment test
 - an automatically generated offline `file://` build for locked-down school PCs
 
-Some question types still require teacher grading. Handwriting recognition and paid AI graders are not enabled by default.
+The blank-test + completed-key setup, local template alignment, blank/key difference proposals, separate student-scan stage, and low-confidence alignment review are now implemented. Some question types still require teacher grading. Handwriting recognition and paid AI graders are not enabled by default.
 
 ## Frozen target workflow
 
