@@ -58,9 +58,10 @@ const offlinePdfLoader = `async function ensurePdfJs() {
 const modules = [
   ['graders.js', 0],
   ['redDetect.js', 0],
+  ['alignment.js', 0],
   ['graders/matching.js', 1],
   ['i18n.js', 0],
-  ['app.js', 4],
+  ['app.js', 5],
 ];
 const built = new Map();
 const chunks = [];
