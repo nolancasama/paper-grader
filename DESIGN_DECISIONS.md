@@ -125,3 +125,12 @@ A useful rule:
 - **AI usage must be visible and bounded when AI is later enabled.** Session UI should show call count, answers sent to AI, model(s), token usage when returned by the provider, and estimated/actual cost. Support a configurable spend limit; once reached, unresolved answers become teacher-review items rather than silently making more paid calls.
 - **Preferred cost ladder is local/deterministic first, then AI only for unresolved crops.** Simple structured items should never require AI. A small/cheap model may handle simple uncertain handwriting, while harder items can route directly to a stronger model or escalate only when that is demonstrably cost-effective. Repeated low-value escalation should be avoided because both calls cost money.
 - **If any answer remains unresolved, its correction mark stays blank and the final score stays unprinted.** This remains the print-safety rule even when AI is available.
+
+## 2026-10-21 — Blank-template alignment foundation implemented
+
+- **The working UI now follows Setup → Answer areas → Students → Grade → Results → Print.** Blank original and completed key are loaded separately; student scans are a distinct later stage.
+- **Completed-key and student scans are normalized and locally registered to the blank test** using printed-page darkness/features with a bounded translation/rotation/scale search. Each result carries an alignment-specific confidence score.
+- **Setup prefers blank/key image differencing** to propose answer regions. Red-ink detection remains available as an optional alternative/fallback.
+- **Low-confidence student alignment blocks automatic grading until reviewed.** The student stage highlights those pages and offers a translucent blank-vs-aligned-page overlay; teacher acceptance explicitly overrides the alignment warning for that page.
+- **Matching uses the blank-template crop when available,** so teacher matching lines no longer need to be red.
+- This first alignment implementation targets ordinary copier shift, small rotation and scale differences. More complex perspective/homography correction remains a later reliability enhancement if real copier scans show it is needed.
