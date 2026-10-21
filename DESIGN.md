@@ -1,102 +1,179 @@
-# PaperGrader — Design Spec (v2)
+# PaperGrader — Frozen Product / Architecture Spec
 
-Audience: one teacher (ESL, Japan) on a laptop/school PC with mouse + keyboard,
-later shared with Japanese colleagues. Goal: a class stack goes copier → app →
-copier, and the teacher only *reviews* instead of judging every answer.
+Audience: classroom teachers grading one-page paper tests with a school copier/printer.
+Primary constraint: fast, private, inexpensive grading that can still work on locked-down school PCs.
 
-## Workflow (5 steps)
+## Core workflow
 
-1. **スキャン / Scan** — upload one PDF (or images). Toggle "1ページ目は解答 /
-   First page is the answer key" (default ON). With the toggle on, page 1 is the
-   key and is never treated as a student. If a saved session exists, show a
-   banner: "保存された採点があります (12枚) — 同じファイルを選ぶと再開します /
-   Saved session for 12 pages — choose the same files to resume."
-2. **解答欄 / Answer areas** — the key page is shown large. Drag to draw a box;
-   each new box opens a small inline editor in the sidebar:
-   - **Type**: 記述 Written word · 数字 Number · ○で囲む Circle choice ·
-     線で結ぶ Matching
-   - **Points** (default 1)
-   - **Expected answer** (text; optional; shown for Written/Number; hint
-     "空欄ならAIが解答用紙から読み取ります / Leave blank to read it from the key")
-   - Boxes can be **moved** (drag inside) and **resized** (drag corner handles);
-     selected box highlighted; Delete key removes the selected box.
-   - A separate button "名前欄を指定 / Mark name area" draws the single **name
-     box** (dashed, not graded, not a question).
-   - Sidebar lists questions in order with type icon, points and expected
-     answer; clicking selects the box.
-3. **採点 / Grade** — one question at a time across all students.
-   - Question tabs across the top (Q1 Q2 Q3 …) each with a tiny progress ring /
-     "8/12" and a ⚠ count when flagged items exist.
-   - Header strip shows the **key crop** for this question (and the expected
-     answer text) so the teacher always sees what's correct.
-   - **Auto-grade button** "自動採点" — runs registered graders (see Grader
-     interface). Hidden when no grader is registered for any question type.
-   - Compact student cards: name crop (if a name box exists, else typed name),
-     answer crop, status mark. Target ≥ 10 cards visible at 1366×820.
-   - Clear selected-card state (thick red-pen outline + slight lift).
-   - Keyboard: `1` ○ · `2` △ · `3` × · `0` clear · ←/→ move · after the last
-     student, advance to the next question's first ungraded student.
-   - Bulk: "残りを全部○ / Mark remaining ○" (only ungraded, non-flagged cards).
-   - Filter chips: すべて All · 未採点 Ungraded · 要確認 ⚠ Needs review.
-   - Status labels are consistent everywhere: ○ 正解 Correct · △ 部分点 Partial ·
-     × 不正解 Wrong.
-4. **結果 / Results** — table: name crop + editable name, total, percentage,
-   per-question marks; class average and per-question correct rate. **CSV
-   export** (UTF-8 with BOM so Excel-JP opens it correctly; columns: No., Name,
-   Q1…Qn, Total, Max, %).
-5. **印刷 / Print** — current print panel (paper size, X/Y offset, reverse,
-   rotate, alignment test, aspect warning, ungraded confirm). Key page is never
-   printed.
+### Stage A — Test setup
 
-Top-level steps unlock in order as now.
+1. **Blank test** — load or scan one untouched original test.
+2. **Completed answer key** — load or scan the same test completed by the teacher.
+3. **Align key to blank** — register the completed key to the blank-test coordinate system.
+4. **Extract teacher additions** — subtract the aligned blank test from the completed key so teacher-added writing, circles, checks, and matching lines remain.
+5. **Propose answer regions** — group the added ink into candidate graded regions.
+6. **Teacher verification** — move, resize, merge, delete, or manually add regions. Manual box drawing always remains available.
+7. **Linear answer key** — the question sidebar is the authoritative list: label/order, key crop, question type, expected answer, points, confirmation state.
+8. **Name area / score area** — optional name box plus a separate final-score box saved with the setup.
 
-## Grader interface (frozen)
+Red-ink detection remains an optional accelerator/fallback. It is no longer required when a blank original is available.
 
-`graders.js` exports a registry. Auto-graders live in their own files and
-register themselves; the core app never imports a specific grader.
+### Stage B — Student grading
 
-```js
-// graders.js
-export function registerGrader(type, fn)  // type: 'written'|'number'|'circle'|'matching'
-export function hasGrader(type)
-export async function runGrader(type, input)
-// fn(input) -> Promise<{ status: 'correct'|'partial'|'wrong'|null,
-//                        confidence: number /*0..1*/, reading?: string, note?: string }>
-// input = { question, expected, keyCrop: HTMLCanvasElement, studentCrop: HTMLCanvasElement }
-```
+9. **Student scan stack** — load a separate multipage PDF/images containing one student sheet per page.
+10. **Register every student page to the blank template** before extracting answer crops.
+11. **Auto-grade by question type** using the cheapest reliable method first.
+12. **Review only uncertain answers.**
+13. **Results** — totals, percentages, per-question marks, CSV, class/question statistics.
 
-Grade record per student/question:
-`{ status, source: 'teacher'|'auto', flagged: boolean, reading?, confidence? }`.
-Auto-grade never overwrites a `source: 'teacher'` grade. Result with
-`confidence < 0.8` or `status: null` → `status: null, flagged: true`. Teacher
-setting a grade clears `flagged` and sets `source: 'teacher'`. Auto-graded
-cards show a small "自動 / auto" tag and the AI `reading` if present.
+### Stage C — Physical correction printing
 
-## Visual direction — "Calm teacher's desk"
+14. Re-feed the same physical student sheets.
+15. Optional **second stack verification scan** can identify swaps, missing sheets, reversed order, or off-by-one shifts before printing.
+16. Print only the correction overlay: ○ / △ / × and final score.
+17. Any unresolved/flagged answer stays unmarked; if a student has any unresolved answer, the final score is not printed.
 
-- Warm paper background `#f6f1e7`, cards `#fffdf8`, hairlines `#e4dccb`,
-  ink text `#2b2a27`, muted `#7a7466`.
-- **Red pen** accent `#c8322b` for primary actions, selection and the ○/△/×
-  marks (Japanese marking convention). Correct/partial/wrong chips are
-  differentiated by symbol first, tint second (soft red / amber / grey) — not
-  green/red traffic lights.
-- Needs-review amber `#b7791f` on `#fbf0d9`.
-- Type: "Zen Kaku Gothic New" (Google Fonts) for UI, falling back to
-  system-ui / "Hiragino Sans" / "Yu Gothic". Numbers tabular.
-- One compact top bar (~56px): app name, the 5 steps inline, language toggle
-  (日本語 / EN). No large hero header on working screens.
-- Generous but not wasteful spacing; radius 10px; soft shadows only on lifted
-  elements.
-- Works at 1280–1920 wide; iPad width must not break but is not optimised.
+## Canonical coordinate system and alignment
 
-## Language
+The **blank original test is the canonical page coordinate system**.
 
-All UI strings in one dictionary (`i18n.js`, `ja` and `en`). Default `ja` when
-`navigator.language` starts with `ja`, else `en`. Toggle persists in
-localStorage. Mark symbols ○ △ × are language-independent.
+Before answer extraction or grading, align the answer key/student page to the blank template. Default alignment must not depend on special registration marks.
 
-## Out of scope for v2 build 1
+Preferred alignment ladder:
 
-Actual auto-graders (ink comparison for circles; AI for written/number/
-matching) — separate builds against the Grader interface. Saved templates,
-multi-page tests, custom partial credit.
+1. page-boundary / orientation normalization
+2. stable printed-feature or template matching
+3. translation + rotation + scale correction
+4. affine/perspective correction when needed
+5. confidence score
+6. low-confidence pages go to visual review, never silent auto-grading
+
+A translucent overlay/blink view is a human verification tool for questionable pages, not the normal alignment method.
+
+Registration/fiducial marks are explicitly back-burner: optional future reliability aids only.
+
+## Answer discovery
+
+Preferred setup pipeline:
+
+`aligned completed key - aligned blank test -> teacher-added ink -> connected/grouped regions -> proposed questions`
+
+Do not OCR or send a whole test page to AI just to find answers.
+
+Question proposals are editable and use the same question model as manually drawn boxes.
+
+## Automatic grading architecture
+
+Auto-graders plug into the shared grader registry. Different answer types use different strategies.
+
+### Structured/local-first examples
+
+- blank/nonblank detection: local
+- circle/bubble/checkbox choice: local image analysis
+- matching: local web/connection analysis
+- clean numbers/printed text: local OCR where practical
+- scoring/results/printing: deterministic local logic
+
+### Written / difficult answers
+
+Use tight answer crops only. Local OCR/recognition first; AI only for unresolved cases when enabled.
+
+Never send an entire student test to AI when only one answer needs help.
+
+## Confidence policy
+
+Do not use one universal confidence score for every subsystem.
+
+Track at least:
+
+- alignment confidence
+- answer extraction/recognition confidence
+- interpretation/comparison confidence
+
+The weakest material stage governs whether an answer may be auto-graded.
+
+Initial conservative policy:
+
+- ~0.99+ — eligible for automatic grading
+- ~0.95–0.99 — try another reliable local method / configured AI fallback
+- below ~0.95 — teacher review
+
+Automatic wrong marks should be at least as conservative as automatic correct marks.
+
+These thresholds are starting points, not truths. Calibrate them against real classroom scans and optimize for extremely high precision among auto-graded answers.
+
+## Matching grader
+
+Treat the whole matching exercise as one region.
+
+Matching ladder:
+
+1. isolate/normalize the student ink web and compare it with the key web
+2. if the web is extremely similar, accept the whole section as correct without needing perfect crossing reconstruction
+3. when the web differs, infer left/right endpoints and connection paths
+4. at intersections, prefer directional continuity / minimum angular change / stroke continuity
+5. if a crossing is genuinely ambiguous, do not guess
+6. optional future AI sees only the small matching crop and returns structured connections
+7. unresolved answers go to teacher review
+
+When the connection graph is clean, identify specific wrong pairings and award proportional credit.
+
+## AI cost policy
+
+PaperGrader is **AI-assisted, not AI-dependent**.
+
+Cost ladder:
+
+`local deterministic/CV -> local OCR -> cheap AI for suitable uncertain crops -> stronger AI only for genuinely hard crops -> teacher review`
+
+Avoid automatically escalating every cheap-model failure if the escalation rate makes double-calling uneconomical.
+
+When AI is enabled, show a session usage meter with:
+
+- number/percentage of answers handled locally
+- number sent to AI
+- model(s)
+- call count
+- token usage when provided
+- estimated/actual cost
+- escalation count/rate
+- unresolved teacher-review count
+
+Support an optional spending cap. At the cap, further uncertain answers become review items.
+
+## Page identity and print safety
+
+Do not permanently equate a student with page index.
+
+Store page/student identity separately so a future second verification scan can remap overlays if the physical stack order changes.
+
+The optional verification scan should be able to detect:
+
+- swapped sheets
+- missing sheets
+- extra sheets
+- reversed stack
+- one-sheet/off-by-one shift
+
+If verification confidence is insufficient, block automatic correction printing for affected sheets rather than risk printing another student's marks.
+
+## Printing
+
+Existing print calibration remains:
+
+- paper size
+- X/Y print offsets
+- reverse order
+- rotate 180°
+- alignment test
+- score-area placement
+
+Scan/template alignment and printer calibration are separate problems.
+
+## Privacy / offline requirements
+
+- Student page processing stays local by default.
+- Scanned page images are not uploaded merely for alignment or local grading.
+- Offline build must remain functional from `file://` on locked-down school PCs.
+- Runtime CDN dependencies should not be required by the offline package.
+- If AI is later configured, send only the minimum answer crop required and make that usage explicit to the teacher.
