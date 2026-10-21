@@ -2,7 +2,7 @@ name: Package offline PaperGrader
 
 on:
   push:
-    branches: [main]
+    branches: [main, blank-template-alignment]
     paths:
       - "offline/**"
       - "app.js"
@@ -10,6 +10,7 @@ on:
       - "graders.js"
       - "graders/**"
       - "redDetect.js"
+      - "alignment.js"
       - "index.html"
       - "styles.css"
       - "tools/**"
@@ -26,10 +27,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Build fresh offline package
+        run: npm run build:offline
       - name: Test source and offline build
         run: npm test
-      - name: Syntax check offline JavaScript
-        run: node --check offline/offline-app.js
+      - name: Syntax check source and offline JavaScript
+        run: |
+          node --check app.js
+          node --check alignment.js
+          node --check offline/offline-app.js
       - name: Package offline build
         run: |
           mkdir -p dist/PaperGrader-v2-Offline
