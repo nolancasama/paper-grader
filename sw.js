@@ -1,4 +1,4 @@
-const CACHE = 'papergrader-v2-build1-v4';
+const CACHE = 'papergrader-v3-template-alignment-v1';
 const CORE = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const CORE = [
   './app.js',
   './graders.js',
   './redDetect.js',
+  './alignment.js',
   './graders/matching.js',
   './i18n.js',
   './manifest.webmanifest',
