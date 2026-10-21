@@ -110,7 +110,7 @@ function prepare(keyImage, studentImage, options = {}) {
     const shift = bestShift(template, key.ink, width, height);
     // Bring the template into key coordinates before subtracting it from both crops.
     printed = align(template, width, height, { dx: -shift.dx, dy: -shift.dy });
-    keyInk = subtract(key.red, dilate(printed, width, height));
+    keyInk = subtract(key.ink, dilate(printed, width, height));
   }
   if (!studentImage) return { width, height, keyInk, printed };
   const student = masks(studentImage, width, height).ink;
@@ -475,7 +475,12 @@ export function gradeMatching({ keyImage, studentImage, question = {}, options =
 }
 
 // Canvas APIs are used only when the browser invokes this registered wrapper.
-registerGrader('matching', async ({ question, keyCrop, studentCrop }) => {
+registerGrader('matching', async ({ question, keyCrop, studentCrop, templateImage }) => {
   const read = crop => crop.getContext('2d').getImageData(0, 0, crop.width, crop.height);
-  return gradeMatching({ question, keyImage: read(keyCrop), studentImage: read(studentCrop) });
+  return gradeMatching({
+    question,
+    keyImage: read(keyCrop),
+    studentImage: read(studentCrop),
+    options: templateImage ? { templateImage: read(templateImage) } : {},
+  });
 });
