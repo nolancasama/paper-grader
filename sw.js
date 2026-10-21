@@ -1,4 +1,4 @@
-const CACHE = 'papergrader-v3-template-alignment-v1';
+const CACHE = 'papergrader-v3-template-alignment-v2';
 const CORE = [
   './',
   './index.html',
@@ -32,7 +32,7 @@ self.addEventListener('fetch', (event) => {
   const sameOrigin = new URL(event.request.url).origin === self.location.origin;
   if (sameOrigin) {
     event.respondWith(
-      fetch(event.request)
+      fetch(event.request, { cache: 'no-store' })
         .then(async (resp) => {
           if (resp.ok)
             await caches
