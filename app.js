@@ -2073,7 +2073,7 @@ function makeOverlayCanvas(pi, calibration = false) {
       ctx.restore();
     }
   });
-  const { score, max } = scoreForStudent(pi);
+  const { score, max, percent } = scoreForStudent(pi);
   const reviewed = state.questions.every((q) => {
     const record = state.grades[pi]?.[q.id];
     return record?.status && !record.flagged;
@@ -2098,6 +2098,7 @@ function makeOverlayCanvas(pi, calibration = false) {
       ctx.fillText(text, c.width * 0.965, c.height * 0.025);
     }
     ctx.restore();
+    addCelebration(ctx, pi, percent);
   } else if (calibration) {
     ctx.save();
     const fs = Math.max(22, c.width * 0.023);
