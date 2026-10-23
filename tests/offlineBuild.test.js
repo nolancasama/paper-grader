@@ -26,6 +26,8 @@ test('offline build compiles as a classic script and committed outputs are curre
     assert.match(script, /\bdetectRedRegions\b/);
     assert.match(script, /\bestimateAlignment\b/);
     assert.match(script, /\bdetectDifferenceRegions\b/);
+    assert.match(script, /\bcelebrationForPercent\b/);
+    assert.match(script, /\bstampJitter\b/);
     assert.match(script, /\bPDF_WORKER_SOURCE\b/);
     assert.doesNotMatch(script, /navigator\.serviceWorker\.register/);
     assert.doesNotMatch(script, /\bimport\s*\(/);
@@ -59,7 +61,7 @@ test('offline build fails before writing when the PDF loader anchor changes', ()
   const fixture = mkdtempSync(join(tmpdir(), 'papergrader-offline-anchor-'));
   try {
     for (const filename of ['tools/build-offline.mjs', 'offline/offline-app.js', 'graders.js',
-      'redDetect.js', 'alignment.js', 'graders/matching.js', 'i18n.js', 'app.js']) {
+      'redDetect.js', 'alignment.js', 'celebrations.js', 'graders/matching.js', 'i18n.js', 'app.js']) {
       const target = join(fixture, filename);
       mkdirSync(join(target, '..'), { recursive: true });
       let content = readFileSync(join(projectRoot, filename), 'utf8');
