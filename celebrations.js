@@ -88,3 +88,30 @@ export function chooseStampRect({
   }
   return best;
 }
+
+
+function seededUnit(seed) {
+  let hash = 2166136261;
+  const text = String(seed ?? '');
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  hash ^= hash >>> 13;
+  hash = Math.imul(hash, 2246822519);
+  hash ^= hash >>> 16;
+  return (hash >>> 0) / 4294967295;
+}
+
+export function stampJitter(seed) {
+  const a = seededUnit(seed + ':a');
+  const b = seededUnit(seed + ':b');
+  const c = seededUnit(seed + ':c');
+  const d = seededUnit(seed + ':d');
+  return {
+    angleDeg: -9 + a * 18,
+    offsetX: -0.012 + b * 0.024,
+    offsetY: -0.008 + c * 0.016,
+    scale: 0.94 + d * 0.12,
+  };
+}
