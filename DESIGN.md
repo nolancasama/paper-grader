@@ -177,3 +177,30 @@ Scan/template alignment and printer calibration are separate problems.
 - Offline build must remain functional from `file://` on locked-down school PCs.
 - Runtime CDN dependencies should not be required by the offline package.
 - If AI is later configured, send only the minimum answer crop required and make that usage explicit to the teacher.
+
+## High-score celebration printing
+
+Celebration output is part of the correction-printing instructions and must only run when the student's paper is fully resolved and the final score is eligible to print.
+
+- **90–94%:** print a one-color faux stamp reading **GOOD JOB!**
+- **95–97%:** print a one-color faux stamp reading **AMAZING!**
+- **98–99%:** print a one-color faux stamp reading **GENIUS!**
+- **100%:** print **no stamp**. Instead, print an artistic decorative border around the edges of the test so the page looks framed.
+- Below 90%: no celebration decoration.
+- If any answer is unresolved/flagged and the final score is withheld, print no stamp and no perfect-score frame.
+
+### Stamp placement and appearance
+
+The stamp should appear near the total score in a relatively empty area without covering important printed content, answer regions, the name area, or the score area.
+
+It should look as though a person applied a physical ink stamp rather than as though a computer placed an identical graphic on every paper:
+
+- vary rotation slightly from student to student
+- vary position by a small amount
+- vary scale slightly
+- keep the variation bounded so the stamp remains readable and inside a safe print area
+- make the variation deterministic/stable for the same student/result so a reprint reproduces the same stamp placement instead of moving unpredictably
+
+The stamp is monochrome. Teacher-selectable ink colors may include red, blue, green, and purple.
+
+A teacher may optionally supply a local character image they are permitted to use. Convert it to the selected single-color stamp style locally. Do not require or bundle third-party copyrighted character artwork in the public repository.
