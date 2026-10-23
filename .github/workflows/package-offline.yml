@@ -2,7 +2,7 @@ name: Package offline PaperGrader
 
 on:
   push:
-    branches: [main, blank-template-alignment]
+    branches: [main, blank-template-alignment, celebration-print-decorations]
     paths:
       - "offline/**"
       - "app.js"
@@ -11,6 +11,7 @@ on:
       - "graders/**"
       - "redDetect.js"
       - "alignment.js"
+      - "celebrations.js"
       - "index.html"
       - "styles.css"
       - "tools/**"
