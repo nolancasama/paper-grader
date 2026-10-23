@@ -1,5 +1,19 @@
 # PaperGrader
 
+## Current preferred workflow: grade directly with ChatGPT
+
+**[Read the authoritative ChatGPT grading instructions](./CHATGPT_GRADING_INSTRUCTIONS.md).**
+
+The current project direction is to **use ChatGPT itself** to understand scanned worksheets, establish context-aware grading rubrics, grade student PDFs, produce student score reports and linear answer keys, and generate marks-only red correction PDFs to re-feed the **original paper tests**. This is a set of instructions for a ChatGPT conversation, **not a request to embed ChatGPT into this browser app**.
+
+**Multi-class use:** Upload the blank test and completed key once for a given test version in an active ChatGPT session. Then upload Class A, Class B, etc. student PDFs separately. ChatGPT should reuse the same approved rubric while keeping each class's scan order, students, scores, print mappings, and files separate. For a new conversation the files/rubric may need to be reattached.
+
+The original browser implementation remains in this repository for historical/reference use. Its capabilities below are **not** the same as the proposed ChatGPT-native workflow, and updating these instructions does not automatically change or deploy that app.
+
+---
+
+## Legacy browser app
+
 A browser-based classroom tool for grading one-page paper tests and printing red correction marks back onto the original student sheets.
 
 ## Current implementation
