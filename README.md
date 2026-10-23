@@ -141,3 +141,17 @@ The most important physical measurements are:
 - whether printer output has a consistent X/Y offset
 - whether tray orientation/order is consistent
 - whether correction marks land accurately after re-feeding
+
+
+## High-score celebration printing
+
+When all answers on a paper are resolved, PaperGrader can add print-only celebration art:
+
+- 90–94%: **GOOD JOB!** one-color stamp
+- 95–97%: **AMAZING!** one-color stamp
+- 98–99%: **GENIUS!** one-color stamp
+- 100%: an artistic picture-frame border around the page instead of a stamp
+
+Stamp placement searches for relatively empty space near the final score and avoids defined grading/name/score areas. Each student's stamp gets a stable slight rotation, offset, and scale variation so it looks hand-stamped but stays reproducible on reprint.
+
+Teachers can choose red, blue, green, or purple and may optionally load a local character image they are allowed to use. The selected image is converted to one-color stamp art in the browser and is not uploaded.
