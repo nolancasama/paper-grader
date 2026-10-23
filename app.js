@@ -1,6 +1,7 @@
 import { ANSWER_TYPES, hasGrader, runGrader } from './graders.js';
 import { detectRedRegions, sortReadingOrder, DEFAULT_RED_OPTIONS } from './redDetect.js';
 import { detectDifferenceRegions, estimateAlignment, forwardCanvasTransform, inverseCanvasTransform, DEFAULT_ALIGNMENT_OPTIONS } from './alignment.js';
+import { CELEBRATION_COLORS, celebrationForPercent, chooseStampRect, stampJitter } from './celebrations.js';
 import { applyI18n, getLanguage, setLanguage, t } from './i18n.js';
 import './graders/matching.js';
 
@@ -12,6 +13,7 @@ const PAPER_MM = { A4: [210, 297], B5: [182, 257], B4: [257, 364], A3: [297, 420
 const TYPE_ICONS = { written: 'Aa', number: '12', circle: '○', matching: '↔', checkbox: '☑', short: '✎' };
 const detectionCache = new WeakMap();
 const keyCropCache = new WeakMap();
+const celebrationDensityCache = new WeakMap();
 const isProposal = (question) => question.origin === 'auto' && !question.confirmed;
 
 const state = {
@@ -39,6 +41,8 @@ const state = {
   filter: 'all',
   pdfjs: null,
   lastDetection: null,
+  celebrationImage: null,
+  celebrationImageName: '',
 };
 
 const studentPages = () => state.allPages;
@@ -52,6 +56,8 @@ function currentSettings() {
     paperSize: $('#paperSize').value,
     reverseOrder: $('#reverseOrder').checked,
     rotate180: $('#rotate180').checked,
+    celebrationEnabled: $('#celebrationEnabled').checked,
+    celebrationColor: $('#celebrationColor').value,
   };
 }
 
@@ -61,6 +67,9 @@ function applySettings(settings = {}) {
   if (settings.paperSize && PAPER_MM[settings.paperSize]) $('#paperSize').value = settings.paperSize;
   if (settings.reverseOrder !== undefined) $('#reverseOrder').checked = Boolean(settings.reverseOrder);
   if (settings.rotate180 !== undefined) $('#rotate180').checked = Boolean(settings.rotate180);
+  if (settings.celebrationEnabled !== undefined) $('#celebrationEnabled').checked = Boolean(settings.celebrationEnabled);
+  if (settings.celebrationColor && CELEBRATION_COLORS[settings.celebrationColor])
+    $('#celebrationColor').value = settings.celebrationColor;
 }
 
 function getSavedSession() {
