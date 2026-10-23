@@ -166,6 +166,7 @@ function renderSavedBanner() {
 applySettings(getSavedSession()?.settings);
 applyI18n();
 renderSavedBanner();
+renderCelebrationImageStatus();
 
 function toast(message) {
   const el = $('#toast');
@@ -208,6 +209,7 @@ $('#languageToggle').addEventListener('click', () => {
   setLanguage(getLanguage() === 'ja' ? 'en' : 'ja');
   applyI18n();
   renderSavedBanner();
+  renderCelebrationImageStatus();
   renderSetupThumbs();
   renderStudentThumbs();
   renderQuestionList();
@@ -1749,7 +1751,7 @@ function openPrintWindow(calibration = false) {
   w.document.close();
 }
 
-['offsetX', 'offsetY', 'paperSize', 'reverseOrder', 'rotate180'].forEach((id) =>
+['offsetX', 'offsetY', 'paperSize', 'reverseOrder', 'rotate180', 'celebrationEnabled', 'celebrationColor'].forEach((id) =>
   $(`#${id}`).addEventListener('input', () => {
     saveSession();
     if (id === 'paperSize') updateAspectRatioWarning();
