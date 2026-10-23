@@ -7,38 +7,40 @@
 - The teacher uploads PDFs into ChatGPT. ChatGPT does the interpretation, grading, quality control, and creation of downloadable artifacts **in the conversation** using available tools. Do not imply this repository automatically executes those tasks or that files are being processed in the background.
 - Prioritize reliable grading, exact physical page/sheet correspondence, and safe printer calibration over convenience.
 - Do not silently invent handwriting, names, rubric rules, missing pages, grades, confidence values, or print orientation.
+- **Never infer or promote a student submission into the official answer key.** A complete-looking student sheet, an answer pattern shared by many students, or a handwritten "KEY" label is not proof of a teacher-provided key. For every new test version, require teacher confirmation of the reference documents before student grading.
 - Work with anonymized student scans where possible. Confirm school authorization/privacy requirements before uploading identifiable student work to an external AI system. Keep student names and test images out of public GitHub files.
 
 ## Inputs
 
 ### Standard, separate PDFs
 
-1. **Blank test:** required, provides authoritative printed-page layout and physical coordinates.
-2. **Completed teacher answer key:** required. The word "KEY" written or printed on it is **helpful but optional**.
-3. **Student test scans:** one or more PDFs/images; all pages are in the order scanned.
+1. **Blank test:** mandatory for **every new test version**; provides the authoritative printed-page layout and physical coordinates. A key alone is insufficient. Printed question examples do not disqualify an otherwise blank worksheet.
+2. **Completed teacher answer key:** required, supplied as a teacher-completed scan/PDF or manually entered and teacher-approved answer list. The word "KEY" written or printed on it is **helpful but optional**, never proof by itself.
+3. **Student test scans:** one or more PDFs/images; all student pages remain in their original scan order.
 
-Blank and key can be uploaded in **either order**. Read and compare content to identify each; a "KEY" label is a strong clue, not definitive proof. If uncertain, ask the teacher to confirm rather than guessing.
+Blank and key can be uploaded in **either order**. ChatGPT may propose which files/pages are the blank and key, but must show the proposed roles and page ranges and get the teacher's **explicit confirmation of both references before grading any students for a new test version**, even if the classification looks obvious. Confirm once per new test version, not once per class. If the blank or teacher key is missing, duplicated, or cannot be reliably distinguished from student work, **stop before grading** and request the missing document or a corrected designation. Never treat a student submission as the key because it is fully filled, appears first in the stack, matches most answers, or bears the word "KEY".
 
 ### One combined PDF
 
-Also accept one PDF containing a blank test packet and completed key packet in either order, followed by all student test packets. For one-page tests, for instance:
+Also accept one PDF containing a complete blank test packet, a completed teacher key packet, and student test packets. The **preferred scanning order** is blank, key, students (or key, blank, students), but the blank and key may be elsewhere in the file: locate their page ranges instead of relying on position. For one-page tests, for instance:
 - Blank, key, student 1, student 2…; or
 - Key, blank, student 1, student 2…
 
-For multi-page tests, group consecutive pages into the blank packet, key packet, and each student packet using printed page numbers and layout correspondence. Confirm ambiguous boundaries, missing pages, different versions, double-sided layout, or scanned blank backs before printing. **Never infer that the first two pages alone are blank and key when the test is multi-page.**
+For multi-page and duplex tests, identify the full reference packets and each student packet using printed page numbers and layout correspondence; do not designate individual first pages as complete references. Confirm the proposed blank/key roles and every page in each reference packet with the teacher **before any grading**. Preserve the student packet scan sequence after excluding confirmed reference pages, even if the references were interleaved. Confirm ambiguous boundaries, missing pages, different versions, double-sided layout, or scanned blank backs before printing. **Never infer that the first two pages alone are blank and key when the test is multi-page.**
 
 The blank is mandatory even if grading could be done from the key alone. PDF-to-image conversion should happen automatically using available tools; do not require the teacher to preconvert PDFs. Use sufficient image resolution to inspect handwriting and line crossings; preserve source page dimensions, order, orientation and page-to-source mapping. If conversion fails, report what is missing.
 
 ## More than one class using the same test
 
-**Upload blank and key only once per active ChatGPT grading session/test version.** After establishing and, if necessary, teacher-approving the rubric:
+**Upload blank and key only once per active ChatGPT grading session/test version.** Teacher confirmation of blank/key roles is **always required for a new test version**; it does not need to be repeated for subsequent classes that use the identical confirmed version and rubric:
 
 - Accept Class A student PDF(s), grade and export artifacts labeled **Class A**.
 - Accept Class B student PDF(s) **without requesting the same blank and key again**, provided they remain accessible and the worksheet/version/rubric are unchanged.
 - Keep each class's students, test order, scores, review queue, page mappings, exports, and print job separate.
 - Restart **test order numbering at 1 for each class**. Do not combine student records between classes.
 - Reuse shared rubric decisions consistently for all classes; if teacher revises a rubric, regrade affected student responses across classes that are still available, or identify classes requiring reprocessing.
-- If the original PDFs/rubric are not accessible in a new chat, or the test version/layout has changed, request the necessary documents or saved rubric again. Never claim persistent file access without verifying it.
+- A saved test can reuse its **confirmed blank template and approved teacher key together** across conversations only when both references and the associated version/rubric are demonstrably retrievable from an actual connected storage location. Do not assume that a ChatGPT chat or GitHub instructions file permanently stores answer keys.
+- If the original PDFs/rubric are not accessible in a new chat, or the test version/layout has changed, request the necessary documents or saved reference pair again and confirm new or changed reference roles. Never claim persistent file access without verifying it.
 - The teacher may supply a class label; otherwise use an unambiguous temporary label such as Class 1 / Class 2 and identify outputs accordingly.
 
 ## Understand the whole worksheet BEFORE grading
@@ -110,6 +112,7 @@ For multiple classes, use class-specific filenames and separate outputs. The sha
 ## Deliverables quality checks
 
 Before providing outputs, verify:
+- For every new test version, a complete mandatory blank reference and teacher-provided/teacher-approved key were identified, their full page ranges were explicitly confirmed by the teacher, and neither was silently inferred from a student's submission.
 - Every original student test page/sheet has the correct mapped output page/side; count is preserved, including ungraded/blank overlays.
 - No key or blank-test pages are included in student correction overlays.
 - Student order, source pages, print-reversed order, and any duplex blank pages are traceable.
@@ -123,6 +126,6 @@ Before providing outputs, verify:
 
 ## Interaction guideline for ChatGPT
 
-Start by checking whether an accepted rubric and blank/key files are already available for the current test. If yes, ask only for the **new class's student PDF** (and optional class label). If no, establish the blank + key once. Support a one-PDF upload containing both and students. Minimize routine confirmations, but never bypass meaningful ambiguity about identity, rubric, missing pages, sheet mapping or physical printing.
+Start by checking whether a **teacher-confirmed reference pair** (the blank test and teacher-completed or manually approved key), accepted rubric, and matching test version are already accessible. If yes, ask only for the **new class's student PDF** (and optional class label). If no, require a blank test plus a teacher-supplied or manually constructed key; show the proposed roles, complete page ranges, and test version to the teacher and obtain **explicit approval before grading**. Support a one-PDF upload containing references and students. This new-version confirmation is mandatory even for high-confidence identification; it is not a recurring interruption for subsequent classes using the same approved references. If a reference is missing or ambiguous, pause rather than guessing or silently using a student's completed test as the key. Minimize other routine confirmations, but never bypass meaningful ambiguity about identity, rubric, missing pages, sheet mapping or physical printing.
 
 This markdown file is a reusable set of instructions. **Editing GitHub alone does not automatically install or execute it in every future ChatGPT conversation.** A teacher can point ChatGPT to this file, paste it into a Project's instructions, or use an appropriate connected workflow so the instructions are in context.
