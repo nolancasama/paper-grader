@@ -134,3 +134,12 @@ A useful rule:
 - **Low-confidence student alignment blocks automatic grading until reviewed.** The student stage highlights those pages and offers a translucent blank-vs-aligned-page overlay; teacher acceptance explicitly overrides the alignment warning for that page.
 - **Matching uses the blank-template crop when available,** so teacher matching lines no longer need to be red.
 - This first alignment implementation targets ordinary copier shift, small rotation and scale differences. More complex perspective/homography correction remains a later reliability enhancement if real copier scans show it is needed.
+
+## 2026-10-23 — High-score celebration printing
+
+- **Celebration decorations are print-only and only appear after a student's score is fully resolved.** If any answer is unresolved/flagged and the final score is withheld, no stamp or perfect-score frame is printed.
+- **90–94% prints a one-color “GOOD JOB!” faux stamp; 95–97% prints “AMAZING!”; 98–99% prints “GENIUS!”.** At 100%, no stamp is printed.
+- **100% prints an artistic full-page picture-frame border** near the physical page edges instead of a stamp, so a perfect paper is visually distinct.
+- **Stamp placement is automatic.** PaperGrader searches near the score for a low-ink/empty area and avoids known question, name, and score rectangles.
+- **Stamps should look hand-applied rather than mechanically identical.** Each student gets a seeded slight rotation, position jitter, and size variation. The seed is stable so reprinting the same result reproduces the same placement/orientation.
+- **Celebration ink is a single selectable color** (red, blue, green, or purple). A teacher may optionally choose a local character image; PaperGrader converts that image to the selected single-color stamp and does not upload it. The public app ships with an original built-in mascot rather than bundling third-party copyrighted character art.
