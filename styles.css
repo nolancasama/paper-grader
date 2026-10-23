@@ -963,3 +963,26 @@ input.question-label {
   .setup-input-grid { grid-template-columns: 1fr; }
   .setup-thumbs { grid-template-columns: 1fr; }
 }
+
+.celebration-settings {
+  margin: 18px 0 12px;
+  padding: 16px;
+  border: 1px dashed #dfb3ae;
+  border-radius: 12px;
+  background: rgba(248, 225, 220, 0.35);
+  display: grid;
+  gap: 10px;
+}
+.celebration-settings h2 {
+  margin-bottom: 4px;
+}
+.celebration-settings p {
+  margin-bottom: 0;
+}
+.celebration-form-grid {
+  align-items: end;
+}
+.celebration-file {
+  min-height: 38px;
+  width: fit-content;
+}
