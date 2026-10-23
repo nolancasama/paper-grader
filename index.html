@@ -172,6 +172,31 @@
               >Rotate correction overlay 180°</span
             ></label
           >
+          <div class="celebration-settings">
+            <div>
+              <h2 data-i18n="celebrationTitle">Celebration printing</h2>
+              <p class="muted" data-i18n="celebrationHelp">90–99% gets a one-color stamp near the score. 100% gets a decorative picture-frame border instead.</p>
+            </div>
+            <label class="check"
+              ><input id="celebrationEnabled" type="checkbox" checked /><span data-i18n="celebrationEnabled">Print celebration decorations</span></label
+            >
+            <div class="form-grid celebration-form-grid">
+              <label
+                ><span data-i18n="celebrationColor">Ink color</span
+                ><select id="celebrationColor">
+                  <option value="red" data-i18n="inkRed">Red</option>
+                  <option value="blue" data-i18n="inkBlue">Blue</option>
+                  <option value="green" data-i18n="inkGreen">Green</option>
+                  <option value="purple" data-i18n="inkPurple">Purple</option>
+                </select></label
+              >
+              <label class="file-button celebration-file"
+                ><input id="celebrationImageInput" type="file" accept="image/png,image/jpeg,image/webp" /><span data-i18n="chooseCelebrationImage">Choose character image</span></label
+              >
+            </div>
+            <div id="celebrationImageStatus" class="status-line" data-i18n="defaultCelebrationMascot">Using built-in original mascot</div>
+            <p class="small-note" data-i18n="celebrationImageHint">Optional: choose a character image you are allowed to use. PaperGrader converts it to the selected single ink color.</p>
+          </div>
           <div id="aspectRatioWarning" class="warning-box hidden" role="status"></div>
           <div class="tip-box" data-i18n="alignmentTip">First real-world test: use a photocopy.</div>
           <div class="button-row">
