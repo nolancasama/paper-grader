@@ -1761,6 +1761,282 @@ window.addEventListener('beforeunload', (event) => {
   event.returnValue = '';
 });
 
+
+function celebrationInkColor() {
+  return CELEBRATION_COLORS[$('#celebrationColor').value] || CELEBRATION_COLORS.red;
+}
+
+function renderCelebrationImageStatus() {
+  const el = $('#celebrationImageStatus');
+  if (!el) return;
+  el.textContent = state.celebrationImageName
+    ? t('celebrationImageLoaded', { name: state.celebrationImageName })
+    : t('defaultCelebrationMascot');
+}
+
+$('#celebrationImageInput').addEventListener('change', async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) {
+    state.celebrationImage = null;
+    state.celebrationImageName = '';
+    renderCelebrationImageStatus();
+    return;
+  }
+  try {
+    const bitmap = await createImageBitmap(file);
+    const max = 700;
+    const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    state.celebrationImage = canvas;
+    state.celebrationImageName = file.name;
+    renderCelebrationImageStatus();
+  } catch (error) {
+    console.error(error);
+    state.celebrationImage = null;
+    state.celebrationImageName = '';
+    renderCelebrationImageStatus();
+  }
+});
+
+function densitySource(page) {
+  if (!page?.canvas) return null;
+  let cached = celebrationDensityCache.get(page);
+  if (cached) return cached;
+  const width = Math.min(320, page.canvas.width);
+  const height = Math.max(1, Math.round(page.canvas.height * width / page.canvas.width));
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(page.canvas, 0, 0, width, height);
+  const image = ctx.getImageData(0, 0, width, height);
+  const integral = new Uint32Array((width + 1) * (height + 1));
+  for (let y = 1; y <= height; y++) {
+    let row = 0;
+    for (let x = 1; x <= width; x++) {
+      const i = ((y - 1) * width + (x - 1)) * 4;
+      const luma = image.data[i] * 0.299 + image.data[i + 1] * 0.587 + image.data[i + 2] * 0.114;
+      row += luma < 220 ? 1 : 0;
+      integral[y * (width + 1) + x] = integral[(y - 1) * (width + 1) + x] + row;
+    }
+  }
+  cached = { width, height, integral };
+  celebrationDensityCache.set(page, cached);
+  return cached;
+}
+
+function rectInkDensity(page, rect) {
+  const source = densitySource(page);
+  if (!source) return 0;
+  const { width, height, integral } = source;
+  const x0 = Math.max(0, Math.min(width - 1, Math.floor(rect.x * width)));
+  const y0 = Math.max(0, Math.min(height - 1, Math.floor(rect.y * height)));
+  const x1 = Math.max(x0 + 1, Math.min(width, Math.ceil((rect.x + rect.w) * width)));
+  const y1 = Math.max(y0 + 1, Math.min(height, Math.ceil((rect.y + rect.h) * height)));
+  const stride = width + 1;
+  const count = integral[y1 * stride + x1] - integral[y0 * stride + x1]
+    - integral[y1 * stride + x0] + integral[y0 * stride + x0];
+  return count / Math.max(1, (x1 - x0) * (y1 - y0));
+}
+
+function drawOriginalStampMascot(ctx, x, y, w, h, color) {
+  const cx = x + w * 0.5;
+  const cy = y + h * 0.49;
+  const r = Math.min(w, h) * 0.31;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = Math.max(2, r * 0.11);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(cx - r * 0.68, cy - r * 0.65);
+  ctx.lineTo(cx - r * 0.28, cy - r * 1.08);
+  ctx.lineTo(cx - r * 0.05, cy - r * 0.62);
+  ctx.moveTo(cx + r * 0.68, cy - r * 0.65);
+  ctx.lineTo(cx + r * 0.28, cy - r * 1.08);
+  ctx.lineTo(cx + r * 0.05, cy - r * 0.62);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(cx - r * 0.32, cy - r * 0.12, r * 0.08, 0, Math.PI * 2);
+  ctx.arc(cx + r * 0.32, cy - r * 0.12, r * 0.08, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx, cy + r * 0.13, r * 0.42, 0.18, Math.PI - 0.18);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawOneColorImage(ctx, image, x, y, w, h, color) {
+  const temp = document.createElement('canvas');
+  temp.width = Math.max(1, Math.round(w));
+  temp.height = Math.max(1, Math.round(h));
+  const tctx = temp.getContext('2d', { willReadFrequently: true });
+  const scale = Math.min(temp.width / image.width, temp.height / image.height);
+  const dw = image.width * scale;
+  const dh = image.height * scale;
+  tctx.drawImage(image, (temp.width - dw) / 2, (temp.height - dh) / 2, dw, dh);
+  const pixels = tctx.getImageData(0, 0, temp.width, temp.height);
+  for (let i = 0; i < pixels.data.length; i += 4) {
+    const alpha = pixels.data[i + 3] / 255;
+    const whiteDistance = Math.max(
+      255 - pixels.data[i],
+      255 - pixels.data[i + 1],
+      255 - pixels.data[i + 2],
+    ) / 255;
+    pixels.data[i + 3] = Math.round(255 * alpha * Math.min(1, whiteDistance * 1.8));
+    pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = 0;
+  }
+  tctx.putImageData(pixels, 0, 0);
+  tctx.globalCompositeOperation = 'source-in';
+  tctx.fillStyle = color;
+  tctx.fillRect(0, 0, temp.width, temp.height);
+  tctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(temp, x, y, w, h);
+}
+
+function drawCelebrationStamp(ctx, rect, text, color, seed) {
+  const jitter = stampJitter(seed);
+  const x = (rect.x + jitter.offsetX) * ctx.canvas.width;
+  const y = (rect.y + jitter.offsetY) * ctx.canvas.height;
+  const w = rect.w * ctx.canvas.width * jitter.scale;
+  const h = rect.h * ctx.canvas.height * jitter.scale;
+  const cx = x + w / 2;
+  const cy = y + h / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(jitter.angleDeg * Math.PI / 180);
+  ctx.translate(-cx, -cy);
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = Math.max(2.5, w * 0.012);
+  ctx.setLineDash([Math.max(3, w * 0.025), Math.max(2, w * 0.012)]);
+  const radius = Math.min(w, h) * 0.16;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, radius);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const artX = x + w * 0.055;
+  const artY = y + h * 0.08;
+  const artW = w * 0.38;
+  const artH = h * 0.8;
+  if (state.celebrationImage) drawOneColorImage(ctx, state.celebrationImage, artX, artY, artW, artH, color);
+  else drawOriginalStampMascot(ctx, artX, artY, artW, artH, color);
+
+  const tx = x + w * 0.48;
+  const tw = w * 0.47;
+  let fontSize = h * 0.27;
+  ctx.font = '900 ' + fontSize + 'px system-ui';
+  while (fontSize > 10 && ctx.measureText(text).width > tw) {
+    fontSize *= 0.92;
+    ctx.font = '900 ' + fontSize + 'px system-ui';
+  }
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, tx + tw / 2, y + h * 0.45);
+  ctx.font = '800 ' + Math.max(9, h * 0.12) + 'px system-ui';
+  ctx.fillText('★ ★ ★', tx + tw / 2, y + h * 0.72);
+  ctx.globalAlpha = 0.16;
+  ctx.lineWidth = Math.max(1, w * 0.004);
+  for (let i = 0; i < 7; i++) {
+    const yy = y + h * (0.12 + i * 0.115);
+    ctx.beginPath();
+    ctx.moveTo(x + w * (0.08 + (i % 2) * 0.04), yy);
+    ctx.lineTo(x + w * (0.92 - (i % 3) * 0.05), yy + h * 0.01);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawPerfectScoreFrame(ctx, color) {
+  const w = ctx.canvas.width;
+  const h = ctx.canvas.height;
+  const inset = Math.max(14, Math.min(w, h) * 0.018);
+  const inner = inset * 1.85;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = Math.max(3, Math.min(w, h) * 0.004);
+  ctx.strokeRect(inset, inset, w - inset * 2, h - inset * 2);
+  ctx.lineWidth *= 0.45;
+  ctx.strokeRect(inner, inner, w - inner * 2, h - inner * 2);
+
+  const flourish = (x, y, sx, sy) => {
+    const s = Math.min(w, h) * 0.045;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(sx, sy);
+    ctx.beginPath();
+    ctx.moveTo(0, s);
+    ctx.bezierCurveTo(s * 0.1, s * 0.35, s * 0.35, s * 0.1, s, 0);
+    ctx.bezierCurveTo(s * 0.48, s * 0.18, s * 0.3, s * 0.48, s * 0.18, s);
+    ctx.stroke();
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const angle = -Math.PI / 2 + i * Math.PI * 2 / 5;
+      const px = Math.cos(angle) * s * 0.19 + s * 0.27;
+      const py = Math.sin(angle) * s * 0.19 + s * 0.27;
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  };
+  flourish(inset * 0.85, inset * 0.85, 1, 1);
+  flourish(w - inset * 0.85, inset * 0.85, -1, 1);
+  flourish(inset * 0.85, h - inset * 0.85, 1, -1);
+  flourish(w - inset * 0.85, h - inset * 0.85, -1, -1);
+
+  const ribbonY = inset * 1.05;
+  ctx.font = '900 ' + Math.max(12, Math.min(w, h) * 0.015) + 'px system-ui';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('★ PERFECT ★', w / 2, ribbonY);
+  ctx.restore();
+}
+
+function celebrationScoreRect() {
+  return state.scoreBox || { x: 0.77, y: 0.018, w: 0.195, h: 0.07 };
+}
+
+function celebrationBlockedRects() {
+  return [
+    ...state.questions.map(({ x, y, w, h }) => ({ x, y, w, h })),
+    ...(state.nameBox ? [state.nameBox] : []),
+    ...(state.scoreBox ? [state.scoreBox] : []),
+  ];
+}
+
+function addCelebration(ctx, studentIndex, percent) {
+  if (!$('#celebrationEnabled').checked) return;
+  const result = celebrationForPercent(percent);
+  if (result.kind === 'none') return;
+  const color = celebrationInkColor();
+  if (result.kind === 'frame') {
+    drawPerfectScoreFrame(ctx, color);
+    return;
+  }
+  const rect = chooseStampRect({
+    scoreRect: celebrationScoreRect(),
+    blockedRects: celebrationBlockedRects(),
+    density: (candidate) => rectInkDensity(templatePage(), candidate),
+  });
+  if (!rect) return;
+  const seed = String(state.fingerprint || 'papergrader') + ':' + studentIndex + ':' + percent.toFixed(3)
+    + ':' + String(state.names[studentIndex] || '');
+  drawCelebrationStamp(ctx, rect, result.text, color, seed);
+}
+
 function makeOverlayCanvas(pi, calibration = false) {
   const base = studentPages()[pi];
   const c = document.createElement('canvas');
