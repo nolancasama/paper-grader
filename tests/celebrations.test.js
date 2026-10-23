@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { celebrationForPercent, chooseStampRect, overlapFraction } from '../celebrations.js';
+import { celebrationForPercent, chooseStampRect, overlapFraction, stampJitter } from '../celebrations.js';
 
 test('celebration policy follows score bands', () => {
   assert.deepEqual(celebrationForPercent(89.9), { kind: 'none', text: '' });
@@ -34,4 +34,15 @@ test('stamp placement can shrink when nearby areas are crowded', () => {
   assert.ok(chosen);
   assert.ok(chosen.w <= 0.18);
   assert.ok(chosen.x >= 0.025 && chosen.x + chosen.w <= 0.975);
+});
+
+
+test('hand-stamp jitter is stable per student but varies across students', () => {
+  const a = stampJitter('student-1:98');
+  const aAgain = stampJitter('student-1:98');
+  const b = stampJitter('student-2:98');
+  assert.deepEqual(a, aAgain);
+  assert.notDeepEqual(a, b);
+  assert.ok(a.angleDeg >= -9 && a.angleDeg <= 9);
+  assert.ok(a.scale >= 0.94 && a.scale <= 1.06);
 });
