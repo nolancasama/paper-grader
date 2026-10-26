@@ -86,6 +86,17 @@ A visual **correction preview PDF** with the red marks composited on the scanned
 
 For multiple classes, use class-specific filenames and separate outputs. The shared answer-key list may be reused when unchanged, but make it available whenever requested.
 
+## Decorative achievement awards (required on print outputs)
+
+Add celebratory artwork **only when the student's full grading is resolved**. These awards are integrated into the same red correction overlay page as the final score and reproduced on the color preview. Keep the original test order / printer-specific reversed order and front/back mapping exactly as they were; decorations must never create, omit, merge or reorder physical sheets.
+
+- **90-99% (inclusive):** Include one attractive school praise stamp in a blank area near the student's confirmed total score. Use concise text such as **GREAT JOB!**, **EXCELLENT!**, **GENIUS!** or **AMAZING!** and an original chibi/anime-inspired mascot. Slightly vary rotation and position between students so it resembles a real teacher's hand stamp; variations must be deterministic for repeatable printing, and must never overlap answer or score writing.
+- **100%:** Include **both** a larger **PERFECT!** artistic stamp featuring an original chibi/anime-inspired character, **and** a decorative full-page embroidered-style border or frame with stitched floral motifs, colorful threads, stars, leaves and/or elegant filigree. Full color is explicitly allowed for the embroidered border. Keep all artwork inset within printer-safe margins and off student answers, instructions and the score box. For multipage tests, prefer the page holding the designated final score rather than framing every sheet.
+- **Below 90%:** Do not add a celebratory stamp or frame; normal red answer marks and score only.
+- **Pending / low-confidence / unresolved:** Do not award a stamp or frame and do not print an unconfirmed final score. Preserve its (possibly blank) correction overlay page and its correct physical order.
+- Use *original* mascots rather than assuming third-party licensed characters can be reused commercially. Allow artistic designs and color variation without compromising print alignment or readability.
+- Proof the overlays on photocopies at actual size; intricate borders can be clipped by printers' nonprintable margins. A vivid preview is useful, but the dedicated **marks-only** PDF must contain only the awards and correction marks, not the scanned worksheet background.
+
 ## Print order, page retention and physical safeguards
 
 **Non-negotiable rule: preserve one-to-one correspondence between every original physical sheet/side and a printable overlay position, even when all answers on that page are uncertain.**
