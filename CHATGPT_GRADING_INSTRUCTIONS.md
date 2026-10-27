@@ -78,7 +78,7 @@ The blank is mandatory even if grading could be done from the key alone. PDF-to-
 Produce **four separate outputs** for every class batch:
 
 1. **Red correction overlay PDF** — only the red ○ / △ / × marks and a final score at the designated score box, one corresponding **printable page per physical test side** (including empty pages), no background worksheet image. Use an appropriate font/drawing method compatible with the printer. Avoid duplicating a printed denominator (e.g. print "85" in a score box already labeled "/100"). Include a score once per student, on the intended page only.
-2. **Student results spreadsheet (XLSX and/or CSV)** — original test order; class label; original PDF page range; student name and/or number if readable; per-question scores; total/max/percentage; review status; unresolved question IDs. Even if the overlay pages are reversed for the printer, reports stay in **original scan order**.
+2. **Student results spreadsheet (XLSX and/or CSV)** — original test order; class label; original PDF page range; student name and/or number if readable; per-question scores; total/max/percentage; review status; unresolved question IDs. Overlay PDFs and reports both stay in **original scan order** by default. An explicitly teacher-selected printer-order override affects only the overlay file, never the reports.
 3. **Printable student grading summary PDF** — original order number, name or student number, score or pending review, and optional questions needing review.
 4. **Interpreted answer-key list PDF** — questions/subquestions in worksheet order, accepted answer(s), points, personal/multiple-answer rules, clarifications and pending rubric questions. This is the **rule set actually used**, not simply a transcription of the completed key. Refresh whenever rules change.
 
@@ -88,7 +88,7 @@ For multiple classes, use class-specific filenames and separate outputs. The sha
 
 ## Decorative achievement awards (required on print outputs)
 
-Add celebratory artwork **only when the student's full grading is resolved**. These awards are integrated into the same red correction overlay page as the final score and reproduced on the color preview. Keep the original test order / printer-specific reversed order and front/back mapping exactly as they were; decorations must never create, omit, merge or reorder physical sheets.
+Add celebratory artwork **only when the student's full grading is resolved**. These awards are integrated into the same red correction overlay page as the final score and reproduced on the color preview. Keep the normal-order overlay and exact front/back mapping intact (or an explicitly authorized, calibrated alternative); decorations must never create, omit, merge or reorder physical sheets.
 
 - **90-99% (inclusive):** Include one attractive school praise stamp in a blank area near the student's confirmed total score. Use concise text such as **GREAT JOB!**, **EXCELLENT!**, **GENIUS!** or **AMAZING!** and an original chibi/anime-inspired mascot. Slightly vary rotation and position between students so it resembles a real teacher's hand stamp; variations must be deterministic for repeatable printing, and must never overlap answer or score writing.
 - **100%:** Include **both** a larger **PERFECT!** artistic stamp featuring an original chibi/anime-inspired character, **and** a decorative full-page embroidered-style border or frame with stitched floral motifs, colorful threads, stars, leaves and/or elegant filigree. Full color is explicitly allowed for the embroidered border. Keep all artwork inset within printer-safe margins and off student answers, instructions and the score box. For multipage tests, prefer the page holding the designated final score rather than framing every sheet.
@@ -101,22 +101,24 @@ Add celebratory artwork **only when the student's full grading is resolved**. Th
 
 **Non-negotiable rule: preserve one-to-one correspondence between every original physical sheet/side and a printable overlay position, even when all answers on that page are uncertain.**
 
-- Never drop, merge, skip or silently reorder blank/unresolved correction pages. When the original scan has N student sides that should be printed, generate N corresponding overlay sides before any deliberate printer-specific reordering/duplex padding.
+- Never drop, merge, skip or silently reorder blank/unresolved correction pages. When the original scan has N student sides that should be printed, generate N corresponding overlay sides before any explicitly authorized printer-specific adjustment or duplex padding.
 - If 35 student pages are scanned for a single-sided class, the correction PDF must have 35 pages, including totally empty pages; no blank or key pages in the correction PDF.
 - For multi-page tests, each student packet may span multiple sheets. One total per student, printed only in the intended score area. Treat all scanned pages as distinct until securely grouped.
 - **Default physical paper arrangement: single-sided (simplex)** when uncertain. Auto-detect likely duplex but permit a teacher override. If scan/page mapping, blank-back omission, or sheet count raises doubt, flag before printing; a default is not proof.
 - For duplex, map physical sheet fronts/backs explicitly. Include necessary blank printable backs to prevent correction shifts; do not print duplex output unless page pairing and printer duplex behavior have been confirmed.
 - Separate **scan order**, **printer feed order**, **PDF print order**, **paper face orientation**, **rotations** and **X/Y offset**. These are independent settings.
-- An earlier real-world test placed Student 1 at the top of the printer tray; the original correction PDF printed the **last student's marks on the back of the first test**. Thus, offer independently selectable reversed correction-page order and paper face guidance. This observation does not prove the correct settings for all printer configurations.
-- For that known printer trial, **reverse correction PDF page order** is the proposed default, subject to a physical verification run. Do not assume reversing the PDF fixes front/back orientation.
+- **LOCKED DEFAULT: NORMAL CORRECTION PDF ORDER (1 → N).** The first correction PDF page corresponds to student test 1 / its first printable side, the second to student test 2 (or the next test side), and so on. Never automatically reverse the page sequence. Name the default overlay `*_corrections_NORMAL_ORDER.pdf` (or `*_corrections_NORMAL_ORDER_decorated.pdf`), and label its mapped order plainly.
+- **Printer setup selected by teacher:** RISO ORPHIS GL7430, **internal pull-out tray**, tests placed **face down**, print **single-sided**, **actual size / 100%**, and turn OFF any driver, PDF viewer, or printer setting for `Reverse Order` / `逆順印刷`. Face orientation, feed order and physical alignment must still be verified on photocopies; choosing normal PDF order is not proof of successful calibration.
+- **Why this is locked:** During an earlier trial, a reversed correction PDF failed to match the intended originals; after discussing the printer configuration, the teacher explicitly selected **normal order** as the default. Do not resurrect the previous suggestion to reverse PDF pages simply because of that older failed print. A last-page-first or manually reversed print job may be generated **only at the teacher's explicit request after a measured calibration**, and must be labeled as an exception, never silently substituted for the normal-order default.
+- Do not assume that a face-down stack determines whether the topmost or bottommost sheet physically feeds first. Paper feed order and PDF print sequence are independent; confirm both with a small photocopy test.
 - Always preview and first calibrate with **photocopies**, not unique originals. Verify physical feed order, side, orientation, page count, actual size (100%, no fit-to-page), printer offsets, and score-box placement, then refeed the original stack as calibrated.
 - If page alignment, packet mapping or tray behavior is uncertain, warn and refrain from presenting the PDF as physically verified. Never silently print a correction onto the wrong student's paper.
-- Provide a clear print-order mapping report, e.g. "PDF print page 1 -> original test order 35, page 1", without adding such labels to the marks-only printable area.
+- Provide a clear print-order mapping report, e.g. "Normal-order PDF page 1 -> original test order 1, page 1", without adding such labels to the marks-only printable area.
 
 ## Student identity and order
 
 - The primary identifier is the student's **original position in the input scan stack** (within a class). Name, class and student number are secondary extracted metadata and may be missing.
-- Student order numbers are distinct from source PDF page numbers (which may contain blank/key pages) and from printer PDF page numbers (which may be reversed).
+- Student order numbers are distinct from source PDF page numbers (which may contain blank/key pages) and from printer PDF page numbers (normal order by default; different only after explicit teacher-approved calibration).
 - If a named student has multiple pages, display one student record with a source-page range; keep page-level alignment and print mapping for every physical side.
 - Reports are separate from the overlay. They may include identifying metadata, but the overlay should contain only intended red corrections and scores.
 
@@ -126,7 +128,7 @@ Before providing outputs, verify:
 - For every new test version, a complete mandatory blank reference and teacher-provided/teacher-approved key were identified, their full page ranges were explicitly confirmed by the teacher, and neither was silently inferred from a student's submission.
 - Every original student test page/sheet has the correct mapped output page/side; count is preserved, including ungraded/blank overlays.
 - No key or blank-test pages are included in student correction overlays.
-- Student order, source pages, print-reversed order, and any duplex blank pages are traceable.
+- Student order, source pages, **normal-order print mapping**, and any duplex blank pages are traceable; any exceptional, explicitly authorized reordering is separately recorded.
 - Scores match rubric math, individual answers and printed total.
 - Total scores are suppressed for any student with unresolved grading.
 - Marks lie in the correct intended answer regions; score lies in the actual score box without duplicating printed "/100" if present.
