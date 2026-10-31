@@ -69,18 +69,20 @@ The blank is mandatory even if grading could be done from the key alone. PDF-to-
 - Treat **alignment confidence**, **visual reading confidence** and **answer/rubric interpretation confidence** separately; low confidence on any essential part makes the affected answer **pending review**. Numerical thresholds are not scientifically calibrated by default.
 - Do not silently guess handwritten names or student numbers. Show uncertain identity as "unreadable / review", preserving the original test-order ID.
 - If an answer is unresolved, leave **only that question's red correction mark unprinted**; confidently graded questions may still be marked.
-- Do **not** write a final student total until all required grades affecting it have been resolved. Keep pending total blank; the report shows "Review".
+- Do **not** write a final student total until all required grades affecting it have been resolved. Keep the pending total **completely blank on the physical-test correction overlay**; put the status **"Review" / "Pending" only in the separate roster, results spreadsheet, grading summary and teacher review list.**
+- **NEVER print the word "REVIEW", "PENDING", a question mark, or any similar review/status label on a student test**, including in a red-only overlay or its superimposed preview. Pending answers receive no correction mark; confidently graded answers can still receive ○ / △ / ×. If the whole test is unresolved, its correction overlay may be entirely blank, but its page must still be present to maintain physical order.
 - If the teacher changes a grade or rubric, update the results and regenerate both report and overlay.
 - Scores must be mathematically computed from question/subquestion points. Explicitly distinguish uncertain/pending totals from zero.
 
 ## Required outputs per class
 
-Produce **four separate outputs** for every class batch:
+Produce **five separate outputs** for every class batch:
 
-1. **Red correction overlay PDF** — only the red ○ / △ / × marks and a final score at the designated score box, one corresponding **printable page per physical test side** (including empty pages), no background worksheet image. Use an appropriate font/drawing method compatible with the printer. Avoid duplicating a printed denominator (e.g. print "85" in a score box already labeled "/100"). Include a score once per student, on the intended page only.
+1. **Red correction overlay PDF** — only confirmed red ○ / △ / × marks, optional qualifying celebratory stamp/frame, and a **confirmed** final score at the designated score box, one corresponding **printable page per physical test side** (including empty pages), no background worksheet image. Use an appropriate font/drawing method compatible with the printer. Avoid duplicating a printed denominator (e.g. print "85" in a score box already labeled "/100"). Include a score once per student, on the intended page only. **Do not print REVIEW/PENDING/status text anywhere on original tests**, even when grading is incomplete.
 2. **Student results spreadsheet (XLSX and/or CSV)** — original test order; class label; original PDF page range; student name and/or number if readable; per-question scores; total/max/percentage; review status; unresolved question IDs. Overlay PDFs and reports both stay in **original scan order** by default. An explicitly teacher-selected printer-order override affects only the overlay file, never the reports.
-3. **Printable student grading summary PDF** — original order number, name or student number, score or pending review, and optional questions needing review.
-4. **Interpreted answer-key list PDF** — questions/subquestions in worksheet order, accepted answer(s), points, personal/multiple-answer rules, clarifications and pending rubric questions. This is the **rule set actually used**, not simply a transcription of the completed key. Refresh whenever rules change.
+3. **Printable student grading summary PDF** — original test order number, student name, student number, confirmed score or "Pending review", and optional questions needing review. Include a clear class title.
+4. **Printable student score roster PDF (separate teacher-facing file)** — a compact, easy-to-print table with **one row for EVERY student**, in the **original scan/test order**, showing at minimum **test-order position**, **student name**, **student number (No.)**, and **confirmed total score / maximum score (e.g. 90/100)**. Include **class** when known and an optional separate **status** column. If a score is unresolved, do **not** present a guessed or provisional number as final: show **"Pending review"** in the roster score/status field. For an unreadable or missing name or number, write **"Unreadable" / "Not provided"**, not a guessed identity, and keep the position ID for traceability. Fit on a single page when feasible, using as many roster pages as necessary for a large class without tiny illegible text. Title the document clearly, e.g. "Class 2 — Student Scores", and name it with a "student_score_roster.pdf" suffix. **Never insert roster pages into either correction overlay PDF**, since doing so would shift the printed corrections onto the wrong physical tests.
+5. **Interpreted answer-key list PDF** — questions/subquestions in worksheet order, accepted answer(s), points, personal/multiple-answer rules, clarifications and pending rubric questions. This is the **rule set actually used**, not simply a transcription of the completed key. Refresh whenever rules change.
 
 A visual **correction preview PDF** with the red marks composited on the scanned pages is strongly recommended in addition to the required marks-only PDF, for teacher verification. The preview must **never** be confused with the marks-only file intended for refeeding originals.
 
@@ -134,10 +136,11 @@ Before providing outputs, verify:
 - No key or blank-test pages are included in student correction overlays.
 - Student order, source pages, **normal-order print mapping**, and any duplex blank pages are traceable; any exceptional, explicitly authorized reordering is separately recorded.
 - Scores match rubric math, individual answers and printed total.
-- Total scores are suppressed for any student with unresolved grading.
+- Total scores are suppressed for any student with unresolved grading; **no "REVIEW"/"PENDING" or other review text may appear on a test-print overlay or its preview.** Review statuses belong in the separate teacher-facing roster, results spreadsheet, grading summary or review queue.
 - Marks lie in the correct intended answer regions; score lies in the actual score box without duplicating printed "/100" if present.
 - PDF dimensions, print orientation and preview/overlay relationship are consistent.
 - Answer-key list reflects variable-answer policies and all teacher revisions.
+- The separate printable roster contains **every student** in scan order, with name (or clearly marked unreadable), student number (or clearly marked unavailable), confirmed score (or pending-review status) and class where known; its pages are **not part of the print-overlay page count**.
 - Generated files exist and were successfully read/validated before sharing links.
 - Never claim real-world paper-side/order calibration is complete without a successful physical photocopy print test.
 
