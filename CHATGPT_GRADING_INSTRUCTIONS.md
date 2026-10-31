@@ -4,7 +4,7 @@
 
 ## Operating principles
 
-- The teacher uploads PDFs into ChatGPT. ChatGPT does the interpretation, grading, quality control, and creation of downloadable artifacts **in the conversation** using available tools. Do not imply this repository automatically executes those tasks or that files are being processed in the background.
+- The teacher uploads PDFs into ChatGPT. **ChatGPT must personally inspect and judge every student response using its visual understanding of the scanned worksheet**, rather than handing grading judgments to OCR, pixel-matching, or a script. ChatGPT also performs interpretation, quality control, and creation of downloadable artifacts **in the conversation** using available tools. Do not imply this repository automatically executes those tasks or that files are being processed in the background.
 - Prioritize reliable grading, exact physical page/sheet correspondence, and safe printer calibration over convenience.
 - Do not silently invent handwriting, names, rubric rules, missing pages, grades, confidence values, or print orientation.
 - **Never infer or promote a student submission into the official answer key.** A complete-looking student sheet, an answer pattern shared by many students, or a handwritten "KEY" label is not proof of a teacher-provided key. For every new test version, require teacher confirmation of the reference documents before student grading.
@@ -60,6 +60,19 @@ The blank is mandatory even if grading could be done from the key alone. PDF-to-
 
 **Example: a student's own birth month.** If the completed key shows September/9 as the teacher's example, accept any valid month where the circled month and written month number agree. The student need not have the teacher's birthday; do not attempt to verify the student's actual birthday.
 
+## Mandatory method: ChatGPT grades visually, not automated OCR
+
+**Teacher's explicit requirement (after the USB-0011 grading failure): ChatGPT itself must visually read and assess the answers on every student's paper. Do not delegate scoring to an OCR engine or automated image-difference algorithm.** This is a mandatory workflow rule, not a preference or optional enhancement.
+
+- Render each scanned paper at sufficient resolution and **inspect its actual image**. For each student and every assessed question, visually determine what was written, circled, connected or selected, then judge it against the interpreted, teacher-confirmed rubric. Use close-up crops and enlarged images when handwriting, lines or answer endpoints are difficult to see. Preserve each original page's physical orientation and order for printing even if images are rotated temporarily for reading.
+- **Never assign grades, marks or final totals using Tesseract/OCR digit recognition, automatic circle detection, thresholded pixel counts, image differencing, computer-vision line detection, or programmatic answer classification.** These techniques previously misread visibly correct handwritten 3, 1, 2 answers as blanks and wrongly deducted points. Even if such techniques are used as non-authoritative navigation aids, their outputs must not become grades without an independent, direct visual review of **every** answer.
+- **Python/code is for mechanics after human-readable visual decisions:** rasterizing/cropping PDFs; tracking source order and orientation; page alignment and printer offsets; storing already visually verified per-question judgments; arithmetic from those verified judgments; generating ○/△/× overlays, decorations, rosters, CSV/XLSX and PDFs; and validating page mappings. Never allow the PDF-production code to infer or silently overwrite an answer or its correctness.
+- Record a **per-student, per-question visual assessment** (observed answer, rubric comparison, awarded points, and confidence/pending flag) before calculating that student's total. An empty OCR result is **never** evidence of a blank or wrong student answer. A blank or incorrect answer must be established by looking at the student's actual page.
+- For matching tasks, trace each student's line to its actual source and destination by sight, even when lines cross, curve, are redrawn or go beyond the usual region. For multiple choice, visually inspect each handwritten number/circle; do not infer correctness from common answer patterns.
+- **Quality control before generating print-ready files:** review the visual decisions against the original student scans, check that the same item is treated consistently across the batch, flag suspicious class-wide error clusters (especially many apparent blanks on an easy item), and verify every printed score against the visually determined item scores. Perform a final visually grounded spot-check of the composed overlays against their corresponding source sheets for orientation, answer positions and score placement. Never substitute a statistical spot-check for the initial required visual grading of all answers.
+- **If a large batch cannot be fully and reliably inspected visually, do not switch to automated grading to finish it.** Grade only the papers/questions actually visually assessed, mark the rest pending **in teacher-facing reports only**, suppress unverified scores and awards, and explicitly disclose incomplete grading. Do not label uninspected work as graded, and never describe an OCR-derived result as visually verified.
+- The teacher's grades, corrections, authorized overrides, and explicit rubric judgments take precedence. If grading is disputed, re-open the original scan and re-examine it visually before altering the report and correction PDF.
+
 ## Grade the student pages
 
 - Identify every student test packet and page in physical scan order. Preserve the mapping: class ID, original source PDF name, source PDF page, original packet/order number, page within packet, template page number, and physical sheet/side when known.
@@ -72,7 +85,7 @@ The blank is mandatory even if grading could be done from the key alone. PDF-to-
 - Do **not** write a final student total until all required grades affecting it have been resolved. Keep the pending total **completely blank on the physical-test correction overlay**; put the status **"Review" / "Pending" only in the separate roster, results spreadsheet, grading summary and teacher review list.**
 - **NEVER print the word "REVIEW", "PENDING", a question mark, or any similar review/status label on a student test**, including in a red-only overlay or its superimposed preview. Pending answers receive no correction mark; confidently graded answers can still receive ○ / △ / ×. If the whole test is unresolved, its correction overlay may be entirely blank, but its page must still be present to maintain physical order.
 - If the teacher changes a grade or rubric, update the results and regenerate both report and overlay.
-- Scores must be mathematically computed from question/subquestion points. Explicitly distinguish uncertain/pending totals from zero.
+- Scores must be mathematically computed **only from ChatGPT's previously recorded, visually verified question/subquestion judgments**. Explicitly distinguish uncertain/pending totals from zero; never convert a recognition error or unreadable answer into a zero.
 
 ## Required outputs per class
 
@@ -135,7 +148,8 @@ Before providing outputs, verify:
 - Every original student test page/sheet has the correct mapped output page/side; count is preserved, including ungraded/blank overlays.
 - No key or blank-test pages are included in student correction overlays.
 - Student order, source pages, **normal-order print mapping**, and any duplex blank pages are traceable; any exceptional, explicitly authorized reordering is separately recorded.
-- Scores match rubric math, individual answers and printed total.
+- **Every score has a documented visual reading of every relevant student answer**; no point was assigned or deducted merely because OCR, image differencing, circle detection or a Python classifier returned a value or blank. **If any answer has not been visually reviewed, no final total or achievement award is printed for that student.**
+- Scores match rubric math, individually visually assessed answers and printed total; compare a representative set of fully composed preview pages to the original scans, and verify no apparent cohort-wide pattern of 'blank' responses was produced by recognition failure.
 - Total scores are suppressed for any student with unresolved grading; **no "REVIEW"/"PENDING" or other review text may appear on a test-print overlay or its preview.** Review statuses belong in the separate teacher-facing roster, results spreadsheet, grading summary or review queue.
 - Marks lie in the correct intended answer regions; score lies in the actual score box without duplicating printed "/100" if present.
 - PDF dimensions, print orientation and preview/overlay relationship are consistent.
