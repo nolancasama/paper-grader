@@ -30,7 +30,9 @@ from .pdf_processor import page_fingerprint
 
 FORBIDDEN_TEXT = re.compile(r"review|pending|provisional|unverified|unresolved|要確認|保留|\?|？", re.IGNORECASE)
 AUTOMATED_GRADING_NOTE = re.compile(r"\b(ocr|tesseract|easyocr|pixel|threshold|image.?diff\w*|circle detection|line detection)\b", re.IGNORECASE)
-FORBIDDEN_MODULES = {"pytesseract", "tesseract", "easyocr", "paddleocr", "cv2", "skimage", "sklearn", "torch", "tensorflow", "keras", "transformers", "openai", "anthropic", "requests", "httpx", "urllib3"}
+FORBIDDEN_MODULES = {"pytesseract", "tesseract", "easyocr", "paddleocr", "cv2", "skimage", "sklearn", "torch", "tensorflow", "keras", "transformers", "onnxruntime", "pymupdf4llm", "pymupdf_layout", "openai", "anthropic", "requests", "httpx", "urllib3"}
+# PyMuPDF has OCR of its own, reachable without importing anything extra.
+FORBIDDEN_CALLS = {"get_textpage_ocr", "pdfocr_save", "pdfocr_tobytes"}
 # These modules may never read images at all: judgments and arithmetic stay pixel-free.
 PIXEL_FREE_MODULES = {"grading_models.py"}
 
@@ -55,6 +57,8 @@ def check_no_grading_from_images(issues: Issues) -> None:
         tree = ast.parse(source.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             names: list[str] = []
+            if isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_CALLS:
+                issues.error("forbidden_import", f"{source.name} uses PyMuPDF's OCR ({node.attr}). Grades can't come from OCR.", source.name)
             if isinstance(node, ast.Import):
                 names = [alias.name for alias in node.names]
             elif isinstance(node, ast.ImportFrom):

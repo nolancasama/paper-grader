@@ -66,6 +66,28 @@ OpenAI documents plugin skills on the web, but not whether bundled scripts run
 there. Workspace admins can upload `papergrader-plugin.zip` through the Admin
 console (build it with `python scripts/build_bundle.py`). Then run the check below.
 
+### A Windows PC without admin rights
+
+Build a folder that holds Python, the libraries and the plugin, on a PC where you
+have Python:
+
+```
+python scripts/build_portable.py --out C:\some\empty\folder
+```
+
+Copy `PaperGrader-Portable.zip` over, unzip it, and follow `START_HERE.txt`. It needs
+no installer, and targets 64-bit Windows. It doesn't include Codex or the ChatGPT app,
+which you still need on that PC. A managed PC can refuse to run it, and that's for
+school IT to decide. Always start Codex from the `PaperGrader.bat` window, so it finds
+this Python.
+
+Tested from a fresh unzip with no other Python on the path, including a full demo and
+a plugin install. **Not tested on an actual locked-down PC or a standard user account.**
+
+The zip is about 72 MB and isn't committed, so rebuild it after changing the plugin.
+It leaves out PyMuPDF's optional AI packages (`onnxruntime` and others), which a normal
+`pip install pymupdf` brings in. PaperGrader never uses them.
+
 ### Check before trusting any surface
 
 Ask: *"Run PaperGrader's doctor, then the vision check, and show me the raw output."*

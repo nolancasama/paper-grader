@@ -353,6 +353,20 @@ def test_the_import_guard_itself_catches_a_violation(tmp_path, monkeypatch):
     assert "forbidden_import" in issues.codes()
 
 
+def test_the_guard_also_catches_ocr_called_through_pymupdf(tmp_path, monkeypatch):
+    """PyMuPDF can run OCR itself, so checking imports alone would miss it."""
+    bad_pkg = tmp_path / "pkg"
+    bad_pkg.mkdir()
+    (bad_pkg / "sneaky.py").write_text("def read(page):\n    return page.get_textpage_ocr()\n", encoding="utf-8")
+    (bad_pkg / "validator.py").write_text("", encoding="utf-8")
+    import papergrader.validator as v
+
+    monkeypatch.setattr(v, "__file__", str(bad_pkg / "validator.py"))
+    issues = Issues()
+    v.check_no_grading_from_images(issues)
+    assert "forbidden_import" in issues.codes()
+
+
 def test_grading_records_never_touch_an_image_library():
     tree = ast.parse((PLUGIN_ROOT / "papergrader" / "grading_models.py").read_text(encoding="utf-8"))
     names = set()
