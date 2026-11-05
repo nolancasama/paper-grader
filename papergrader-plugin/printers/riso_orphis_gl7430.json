@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "profile_id": "riso_orphis_gl7430",
+  "printer": "RISO ORPHIS GL7430",
+  "tray": "internal pull-out paper tray",
+  "paper_face": "original sheets face down",
+  "paper_mode": "simplex",
+  "scale": "actual size / 100%",
+  "pdf_order": "normal",
+  "reverse_order_setting": "Reverse Order / 逆順印刷 disabled",
+  "offset_mm": {
+    "x": 0,
+    "y": 0
+  },
+  "safe_margin_mm": 6,
+  "calibration": {
+    "physically_verified": false,
+    "confirmed_at": null,
+    "teacher_statement": null
+  }
+}

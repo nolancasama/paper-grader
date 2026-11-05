@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+dist/
+
+# Student data must never reach this public repository.
+# Job folders belong outside any checkout; `init-job` refuses one inside.
+jobs/
+*_private/
+private/

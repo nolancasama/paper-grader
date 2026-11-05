@@ -1,0 +1,4 @@
+# PyMuPDF is AGPL-3.0. It is installed separately and never redistributed in this repo.
+pymupdf>=1.24
+# Optional at runtime: without it, CSV results are still produced, with a warning.
+openpyxl>=3.1

@@ -1,0 +1,8 @@
+﻿pdf_page,test_order,name,page_in_packet,source_pdf,source_page,physical_sheet,side,scan_rotation,mapping
+1,1,Aiko Sample,1,demo_demo-class-a_students.pdf,1,1,front,0,"Normal-order PDF page 1 -> original test order 1, page 1"
+2,2,山田 花子,1,demo_demo-class-a_students.pdf,2,2,front,0,"Normal-order PDF page 2 -> original test order 2, page 1"
+3,3,Ben Example,1,demo_demo-class-a_students.pdf,3,3,front,0,"Normal-order PDF page 3 -> original test order 3, page 1"
+4,4,Chie Fixture,1,demo_demo-class-a_students.pdf,4,4,front,0,"Normal-order PDF page 4 -> original test order 4, page 1"
+5,5,Unreadable,1,demo_demo-class-a_students.pdf,5,5,front,0,"Normal-order PDF page 5 -> original test order 5, page 1"
+6,6,Dai Mock,1,demo_demo-class-a_students.pdf,6,6,front,180,"Normal-order PDF page 6 -> original test order 6, page 1"
+7,7,Emi Dummy,1,demo_demo-class-a_students.pdf,7,7,front,0,"Normal-order PDF page 7 -> original test order 7, page 1"

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Grade paper tests"
+  short_description: "Grade scanned tests by eye and print corrections onto the originals"
+  default_prompt: "Use $grade-paper-tests to grade these scanned tests."
+policy:
+  allow_implicit_invocation: true

@@ -1,0 +1,6 @@
+{
+  "name": "papergrader",
+  "version": "1.0.0",
+  "description": "Visually grade scanned paper tests and produce correction PDFs that print back onto the original student papers.",
+  "skills": "./skills/"
+}

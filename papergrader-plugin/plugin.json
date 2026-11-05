@@ -1,0 +1,25 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "papergrader",
+  "version": "1.0.0",
+  "description": "Visually grade scanned paper tests and produce correction PDFs that print back onto the original student papers.",
+  "author": {
+    "name": "Nolan Casama"
+  },
+  "repository": "https://github.com/nolancasama/paper-grader",
+  "keywords": ["grading", "teaching", "pdf", "printing"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "PaperGrader",
+        "shortDescription": "Grade scanned tests by eye and print corrections onto the originals",
+        "longDescription": "Personal teaching tool. The assistant visually reads every student answer and records its judgment. Bundled Python handles PDF mechanics and arithmetic only, then produces red correction overlays, a preview, reports and a validation report.",
+        "developerName": "Nolan Casama",
+        "category": "Productivity",
+        "capabilities": ["Read", "Write"],
+        "defaultPrompt": ["Grade these scanned tests with PaperGrader."],
+        "brandColor": "#D70A1A"
+      }
+    }
+  }
+}

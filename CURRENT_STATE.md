@@ -1,5 +1,23 @@
 # Current State
 
+## ChatGPT plugin (papergrader-plugin/): the current direction
+
+Version 1 is built on branch `chatgpt-plugin-v1`. Start with `papergrader-plugin/README.md`, whose table states what has and hasn't been tested.
+
+- **Works, tested with synthetic data:** schema and validation, page mapping including rotated scans and combined PDFs, correction overlays, preview, stamps and embroidery, roster, summary, answer key, CSV/XLSX, calibration sheet, status ladder. Plugin installs in Codex CLI 0.162.1 and its launcher ran from the installed copy.
+- **Not yet proven:** ChatGPT or Codex actually running the skill and grading; visual accuracy on real handwriting; alignment on the real RISO ORPHIS GL7430.
+
+### Next steps
+
+1. In a real session, run `doctor` and `vision-check` on ChatGPT desktop or Codex. This decides which surface is usable. Try web as well.
+2. Grade a few anonymized real scans, and compare against the teacher's own marking.
+3. Run the photocopy calibration on the GL7430, then `confirm-calibration`.
+4. Look at the embroidery on real paper; thin thread lines might print too faintly. Send a screenshot of the ORIGACH reference if the border should be closer to it.
+
+---
+
+# Legacy browser app
+
 ## Status
 
 PaperGrader is a static vanilla JavaScript ES-module app with no build step or dependencies. `npm test` runs the algorithm tests. The repository is configured to deploy from the `main` root to GitHub Pages at https://nolancasama.github.io/paper-grader/. The current UI integrates red-key detection and the local matching-lines grader.

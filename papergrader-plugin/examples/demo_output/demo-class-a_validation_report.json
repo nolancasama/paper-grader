@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "papergrader_version": "1.0.0",
+  "class_id": "demo-class-a",
+  "status": "READY_FOR_PHOTOCOPY_PROOF",
+  "status_meaning": "Print on PHOTOCOPIES ONLY. Physical alignment on this printer isn't confirmed yet.",
+  "built_at": "2026-11-05T12:36:23+00:00",
+  "synthetic_data": true,
+  "checks": {
+    "teacher_confirmed_references": "passed",
+    "every_student_page_mapped": "passed",
+    "scan_order_preserved": "passed",
+    "orientation_confirmed": "passed",
+    "no_grades_from_image_measurement": "passed",
+    "scores_from_visual_judgments": "passed",
+    "scores_arithmetically_correct": "passed",
+    "pending_has_no_score_or_art": "passed",
+    "no_status_labels_on_overlays": "passed",
+    "marks_in_answer_areas": "passed",
+    "praise_stamps_present": "passed",
+    "perfect_has_stamp_and_embroidery": "passed",
+    "all_outputs_exist_and_render": "passed",
+    "page_count_matches_stack": "passed",
+    "no_scan_in_correction_pdf": "passed"
+  },
+  "counts": {
+    "printable_pages": 7,
+    "students": 7,
+    "confirmed": 5,
+    "pending": 2,
+    "praise_awards": 2,
+    "perfect_awards": 2
+  },
+  "physical_calibration_verified": false,
+  "visual_audit": {
+    "required_slots": [
+      1,
+      2,
+      6,
+      7
+    ],
+    "passed": true,
+    "attested_at": "2026-11-05T12:39:45+00:00",
+    "inspected_slots": [
+      1,
+      2,
+      6,
+      7
+    ],
+    "statement": "Inspected by Claude Code on synthetic data, final build: proofs for slots 1, 2, 6 and 7. Marks sit on the intended answers, art covers no content, scores are inside the score box with no second denominator, and slot 6 is flipped to match its upside-down scan. This says nothing about real handwriting or a real printer."
+  },
+  "inputs": {
+    "grading_sha256": "edbb9e52212a717ba4a2d33548ae5c8a6bf5189b3f367f2d679bef9da196cbff",
+    "rubric_hash": "a8499d73b0666d2fc26f685d250f91631e7fe86f15e5883c51c32cbb8e37e4e2"
+  },
+  "outputs": {
+    "demo-class-a_answer_details.csv": "c76f36eb62d79d5a892a76f8c38da6840dcfb0c118fbc3fcfb71739a7b5530ff",
+    "demo-class-a_answer_key_list.pdf": "0f251e5950cfa2c64c485476799e4a33c70e96acbbb3040664ed52aa1c830ebb",
+    "demo-class-a_correction_PREVIEW_DO_NOT_PRINT.pdf": "4ce642a74f9544859a0b1f76d768c1fb81be625105e9838c0c4b223f02fa0da9",
+    "demo-class-a_corrections_NORMAL_ORDER.pdf": "1f359850428a6b1f59f056ceb8a11197ab61f3acffb2a70e55457e93c7110171",
+    "demo-class-a_decoration_audit.json": "394f93fde53d0d4b615a2f321b600c220314663b37587bc5d4e653695d5ecbc8",
+    "demo-class-a_grading_summary.pdf": "61939a4b94901012df69d7fdc7c2622609109c73335ccef3da489082b9c5b908",
+    "demo-class-a_overlay_plan.json": "9f8d8a8ff2511c64503e6604a02dbe8b1f12afadeec7486139de9117514e7666",
+    "demo-class-a_print_order_mapping.csv": "f141e71a62a7303ac6eb04db331d87769ab593887391031b30aeb79605ab22e5",
+    "demo-class-a_student_results.csv": "e31a8e36e05121052303f74634f4739e1df19fa510a47d21d5acbd4a2163d88f",
+    "demo-class-a_student_results.xlsx": "4aafcbbdcb11e0f654b8a8e40ba365438e20952f72dcb58c8a5f93e3caddb0de",
+    "demo-class-a_student_score_roster.pdf": "c522f468e471ce38bca779afcdf6226043dfa9160dd1dde4b9a2948109a80715",
+    "proofs/slot-0001_overlay.png": "12de03495e5d47ef82bcb6daadbb5f5723a5ec283302065d9237aec0711b5b3b",
+    "proofs/slot-0001_preview.png": "43d956463e8af99c36efeb16df81daa532f08e7aa6ad3f26301b7a38c99d99ea",
+    "proofs/slot-0002_overlay.png": "bd6f83ba2bbc2810f2549101a8dc5288374b2fe2dc7c47d72f494f7f18f74789",
+    "proofs/slot-0002_preview.png": "a2a5e0409d43a31405ff115b2f52b040710a5ff9fd06caa580fdc119e12bc1ac",
+    "proofs/slot-0006_overlay.png": "f65dd20d831a4f88c61f5dadb4ec472eb8e4f6064473798aa0cddcd346c0e0a7",
+    "proofs/slot-0006_preview.png": "59135552153a7e8992c65bc1bccfeefc00f3509adc7b4291baeba0aa2c4865cc",
+    "proofs/slot-0007_overlay.png": "b9549408c5da3d004afa530237a6223312a4fe2a7c09a3145920cfecfb451ae7",
+    "proofs/slot-0007_preview.png": "55fe59d0131a066e53f2aa17d7faf123dfecdaf1d0f480b4ae2baaecb55860f1"
+  },
+  "limits": [
+    "These checks measure files and records. They can't confirm that a handwriting reading is correct.",
+    "Physical alignment is proven only by a real print on photocopies."
+  ],
+  "errors": [],
+  "warnings": [
+    {
+      "severity": "warning",
+      "code": "synthetic_grades",
+      "message": "These grades are synthetic fixture data, not anyone's reading of real work.",
+      "where": "grading"
+    },
+    {
+      "severity": "warning",
+      "code": "identity_not_read",
+      "message": "The name or number isn't readable. The report shows that instead of a guess.",
+      "where": "student 4"
+    },
+    {
+      "severity": "warning",
+      "code": "identity_not_read",
+      "message": "The name or number isn't readable. The report shows that instead of a guess.",
+      "where": "student 5"
+    }
+  ]
+}

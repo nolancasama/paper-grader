@@ -1,0 +1,27 @@
+name: PaperGrader plugin tests
+
+on:
+  push:
+    paths:
+      - "papergrader-plugin/**"
+      - ".agents/**"
+      - "CHATGPT_GRADING_INSTRUCTIONS.md"
+      - ".github/workflows/papergrader-plugin.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: pip install -r papergrader-plugin/requirements-dev.txt
+      - name: Test
+        working-directory: papergrader-plugin
+        run: python -m pytest tests -q -n auto

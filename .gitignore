@@ -1,2 +1,4 @@
 ﻿.ai/
 .vercel
+.venv/
+__pycache__/

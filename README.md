@@ -8,6 +8,8 @@ The current project direction is to **use ChatGPT itself** to understand scanned
 
 **Multi-class use:** Upload the blank test and completed key once for a given test version in an active ChatGPT session. Then upload Class A, Class B, etc. student PDFs separately. ChatGPT should reuse the same approved rubric while keeping each class's scan order, students, scores, print mappings, and files separate. For a new conversation the files/rubric may need to be reattached.
 
+**To use this workflow as an installable plugin, see [papergrader-plugin/](./papergrader-plugin/README.md).** It packages these instructions with Python for PDF mechanics, correction overlays, stamps, reports and validation. Its README states what has and hasn't been tested.
+
 The original browser implementation remains in this repository for historical/reference use. Its capabilities below are **not** the same as the proposed ChatGPT-native workflow, and updating these instructions does not automatically change or deploy that app.
 
 ---

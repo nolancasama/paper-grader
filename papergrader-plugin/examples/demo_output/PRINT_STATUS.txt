@@ -1,0 +1,7 @@
+demo-class-a: READY_FOR_PHOTOCOPY_PROOF
+Print on PHOTOCOPIES ONLY. Physical alignment on this printer isn't confirmed yet.
+
+3 warning(s):
+  [synthetic_grades] grading: These grades are synthetic fixture data, not anyone's reading of real work.
+  [identity_not_read] student 4: The name or number isn't readable. The report shows that instead of a guess.
+  [identity_not_read] student 5: The name or number isn't readable. The report shows that instead of a guess.
