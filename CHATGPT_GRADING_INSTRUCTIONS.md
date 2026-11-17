@@ -117,6 +117,10 @@ Use an efficient, rigorous process; **do not require an unnecessary second full 
 
 **Automatic continuation:** After grading each section, run the next needed audit without checking whether the teacher wants it. If genuinely ambiguous student answers or indispensable reference/physical printer information remains, record a targeted unresolved exception, continue safe work on other papers, and ask for only the specific teacher judgment required. Never guess an answer to satisfy the audit. Work only within the active request/tool run; do not imply unattended background processing.
 
+## No arbitrary intermediate stopping points
+
+A first/second/third/fourth grading pass, an arithmetic check, a review packet, a coordinate map or a provisional score roster is **NOT** a natural completion point. After each internal stage, continue directly into the next applicable stage **within the same active user request**, without waiting for another `continue` message or asking if the teacher wants the overlay audit. The normal endpoint is all possible final audited reports and correction overlays, with specific genuinely unresolved cases separated and marked pending. If the session's tools or execution limits actually prevent completion, deliver all safe completed work and explain the concrete remaining blocker. Never suggest that ChatGPT will keep working after the response ends or in the background. Progress messages during an active run are fine, but ending the turn just because an intermediate report was generated is not.
+
 ## Required outputs per class
 
 Produce **five separate outputs** for every class batch:
